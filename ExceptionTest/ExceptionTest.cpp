@@ -1,10 +1,8 @@
-// ExceptionTest.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 #include <Windows.h>
 #include <exception>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <string>
 
 #define FUNC_BEGIN std::wcout << L"[" << __func__ << L"] Begin" << std::endl
@@ -20,38 +18,50 @@ void DivideByZero(void)
     FUNC_END;
 }
 
-void SehDivideByZeroHandleException(void)
+void RunTimeError(void)
 {
     FUNC_BEGIN;
-    __try
-    {
-        DivideByZero();
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-        FUNC_TRACE << L"Exception: " << GetExceptionCode() << std::endl;
-    }
+    throw std::runtime_error("Hit a runtime error");
     FUNC_END;
 }
 
-void CppDivideByZeroHandleException(void)
+class application_error : public std::runtime_error
+{
+public:
+    application_error(const std::string& what) : std::runtime_error(what)
+    {
+        FUNC_TRACE << "application_error()" << std::endl;
+    }
+
+    ~application_error()
+    {
+        FUNC_TRACE << "~application_error()" << std::endl;
+    }
+};
+
+void ApplicationError(void)
 {
     FUNC_BEGIN;
-    try
-    {
-        // Windows exception will not be caught by C++ catch clause,
-        // instead it will be caught by SEH handler in RunTest.
-        DivideByZero();
-    }
-    catch (std::exception& e)
-    {
-        FUNC_TRACE << L"Exception: " << e.what() << std::endl;
-    }
-    catch (...)
-    {
-        FUNC_TRACE << L"Exception: ..." << std::endl;
-    }
+    throw application_error("Hit an application error");
     FUNC_END;
+}
+
+#define EXCEPTION_CODE_ENTRY(x) {x, #x}
+
+const std::map<int, std::string> EXCEPTIONCODE =
+{
+    EXCEPTION_CODE_ENTRY(EXCEPTION_ACCESS_VIOLATION),
+    EXCEPTION_CODE_ENTRY(EXCEPTION_INT_DIVIDE_BY_ZERO)
+};
+
+std::wstring GetExceptionCodeString(int exceptionCode)
+{
+    if (EXCEPTIONCODE.find(exceptionCode) == EXCEPTIONCODE.end())
+    {
+        return std::to_wstring(exceptionCode);
+    }
+    const std::string& result = EXCEPTIONCODE.at(exceptionCode);
+    return std::wstring(result.cbegin(), result.cend());
 }
 
 void ProcessExceptionRecord(PEXCEPTION_RECORD exceptionRecord)
@@ -96,6 +106,104 @@ LONG ExceptionFilter(LPEXCEPTION_POINTERS exceptionInfo)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+void SehDivideByZeroHandleException(void)
+{
+    FUNC_BEGIN;
+    __try
+    {
+        DivideByZero();
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        FUNC_TRACE << L"Exception: " << GetExceptionCode() << std::endl;
+    }
+    FUNC_END;
+}
+
+void CppDivideByZeroCatchException(void)
+{
+    FUNC_BEGIN;
+    try
+    {
+        // Windows exception will not be caught by C++ catch clause,
+        // instead it will be caught by SEH handler in RunTest.
+        DivideByZero();
+    }
+    catch (std::exception& e)
+    {
+        FUNC_TRACE << L"Exception: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        FUNC_TRACE << L"Exception: ..." << std::endl;
+    }
+    FUNC_END;
+}
+
+void SehRunTimeErrorHandleException(void)
+{
+    FUNC_BEGIN;
+    __try
+    {
+        RunTimeError();
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        FUNC_TRACE << L"Exception: " << GetExceptionCode() << std::endl;
+    }
+    FUNC_END;
+}
+
+void CppRunTimeErrorCatchException(void)
+{
+    FUNC_BEGIN;
+    try
+    {
+        RunTimeError();
+    }
+    catch (std::exception& e)
+    {
+        FUNC_TRACE << L"Exception: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        FUNC_TRACE << L"Exception: ..." << std::endl;
+    }
+    FUNC_END;
+}
+
+void SehApplicationErrorHandleException(void)
+{
+    FUNC_BEGIN;
+    __try
+    {
+        ApplicationError();
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        FUNC_TRACE << L"Exception: " << GetExceptionCode() << std::endl;
+    }
+    FUNC_END;
+}
+
+void CppApplicationErrorCatchException(void)
+{
+    FUNC_BEGIN;
+    try
+    {
+        ApplicationError();
+    }
+    catch (std::exception& e)
+    {
+        FUNC_TRACE << L"Exception: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        FUNC_TRACE << L"Exception: ..." << std::endl;
+    }
+    FUNC_END;
+}
+
 typedef void(*TEST_METHOD)(void);
 
 const std::map<int, std::pair<TEST_METHOD, std::wstring>> TestCase =
@@ -110,8 +218,36 @@ const std::map<int, std::pair<TEST_METHOD, std::wstring>> TestCase =
     {
         1,
         {
-            CppDivideByZeroHandleException,
-            L"CPP exception handle on divide-by-zero"
+            CppDivideByZeroCatchException,
+            L"CPP exception catch on divide-by-zero"
+        }
+    },
+    {
+        2,
+        {
+            SehRunTimeErrorHandleException,
+            L"Structured exception handler on cpp runtime_error"
+        }
+    },
+    {
+        3,
+        {
+            CppRunTimeErrorCatchException,
+            L"CPP exception catch cpp runtime_error"
+        }
+    },
+    {
+        4,
+        {
+            SehApplicationErrorHandleException,
+            L"Structured exception handler on cpp custom application error"
+        }
+    },
+    {
+        5,
+        {
+            CppApplicationErrorCatchException,
+            L"CPP exception catch cpp custom application error"
         }
     }
 };

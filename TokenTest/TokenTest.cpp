@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <sddl.h>
 #include <iostream>
 #include <string>
 
@@ -23,7 +24,30 @@ DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass,
     return error;
 }
 
-DWORD GetTokenUserInfo(HANDLE tokenHandle)
+DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
+{
+    DWORD error = ERROR_SUCCESS;
+    LPWSTR sid = nullptr;
+
+    if (ConvertSidToStringSidW(sa.Sid, &sid))
+    {
+        std::wcout << L"Sid: " << std::wstring(sid) << L", attributes: 0x" << std::hex << sa.Attributes << std::dec << std::endl;
+        if (LocalFree(sid) != NULL)
+        {
+            error = GetLastError();
+            std::wcout << L"LocalFree failed with error " << error << std::endl;
+        }
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"Sid: failed to convert, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintTokenUserInfo(HANDLE tokenHandle)
 {
     DWORD error = ERROR_SUCCESS;
     std::unique_ptr<byte[]> buffer;
@@ -34,7 +58,8 @@ DWORD GetTokenUserInfo(HANDLE tokenHandle)
     if (error == ERROR_SUCCESS)
     {
         user = (PTOKEN_USER)buffer.get();
-        std::wcout << L"TokenUser " << user->User.Sid << std::endl;
+        std::wcout << L"TokenUser:"<< std::endl;
+        PrintSidAndAttributes(user->User);
     }
 
     return error;
@@ -66,9 +91,9 @@ int wmain(int argc, wchar_t* argv[])
     }
     else
     {
-        std::wcout << L"OpenProcessToken succeeded" << std::endl;
+        std::wcout << L"OpenProcessToken(" << processHandle << L") succeeded with token handle " << tokenHandle << std::endl;
 
-        error = GetTokenUserInfo(tokenHandle);
+        error = PrintTokenUserInfo(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

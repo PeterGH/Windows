@@ -31,7 +31,26 @@ DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
 
     if (ConvertSidToStringSidW(sa.Sid, &sid))
     {
-        std::wcout << L"Sid: " << std::wstring(sid) << L", attributes: 0x" << std::hex << sa.Attributes << std::dec << std::endl;
+        std::wcout << L"Sid: " << std::wstring(sid) << L", attributes: 0x" << std::hex << sa.Attributes << std::dec << L" ";
+
+#define OUT_ATTRIBUTE(x) \
+        if (sa.Attributes & (x)) \
+        { \
+            std::wcout << L"|" << #x; \
+        }
+
+        OUT_ATTRIBUTE(SE_GROUP_LOGON_ID);
+        OUT_ATTRIBUTE(SE_GROUP_RESOURCE);
+        OUT_ATTRIBUTE(SE_GROUP_INTEGRITY_ENABLED);
+        OUT_ATTRIBUTE(SE_GROUP_INTEGRITY);
+        OUT_ATTRIBUTE(SE_GROUP_USE_FOR_DENY_ONLY);
+        OUT_ATTRIBUTE(SE_GROUP_OWNER);
+        OUT_ATTRIBUTE(SE_GROUP_ENABLED);
+        OUT_ATTRIBUTE(SE_GROUP_ENABLED_BY_DEFAULT);
+        OUT_ATTRIBUTE(SE_GROUP_MANDATORY);
+
+        std::wcout << std::endl;
+
         if (LocalFree(sid) != NULL)
         {
             error = GetLastError();
@@ -47,7 +66,7 @@ DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
     return error;
 }
 
-DWORD PrintTokenUserInfo(HANDLE tokenHandle)
+DWORD PrintTokenUser(HANDLE tokenHandle)
 {
     DWORD error = ERROR_SUCCESS;
     std::unique_ptr<byte[]> buffer;
@@ -61,9 +80,40 @@ DWORD PrintTokenUserInfo(HANDLE tokenHandle)
         std::wcout << L"TokenUser:"<< std::endl;
         PrintSidAndAttributes(user->User);
     }
+    else
+    {
+        std::wcout << L"Failed to get TokenUser info, error " << error << std::endl;
+    }
 
     return error;
 }
+
+DWORD PrintTokenGroups(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_GROUPS groups;
+
+    error = GetTokenInformation(tokenHandle, TokenGroups, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        groups = (PTOKEN_GROUPS)buffer.get();
+
+        for (DWORD i = 0; i < groups->GroupCount; i++)
+        {
+            std::wcout << L"TokenGroups[:" << i << L"]:" << std::endl;
+            PrintSidAndAttributes(groups->Groups[i]);
+        }
+    }
+    else
+    {
+        std::wcout << L"Failed to get TokenGroups info, error " << error << std::endl;
+    }
+
+    return error;
+}
+
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -93,7 +143,8 @@ int wmain(int argc, wchar_t* argv[])
     {
         std::wcout << L"OpenProcessToken(" << processHandle << L") succeeded with token handle " << tokenHandle << std::endl;
 
-        error = PrintTokenUserInfo(tokenHandle);
+        PrintTokenUser(tokenHandle);
+        PrintTokenGroups(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

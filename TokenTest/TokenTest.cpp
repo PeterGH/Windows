@@ -49,6 +49,8 @@ DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
         OUT_ATTRIBUTE(SE_GROUP_ENABLED_BY_DEFAULT);
         OUT_ATTRIBUTE(SE_GROUP_MANDATORY);
 
+#undef OUT_ATTRIBUTE
+
         std::wcout << std::endl;
 
         if (LocalFree(sid) != NULL)
@@ -114,6 +116,89 @@ DWORD PrintTokenGroups(HANDLE tokenHandle)
     return error;
 }
 
+DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD length = 0;
+
+    if (LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t *>(luidName.c_str()), &length))
+    {
+        std::wcout << L"LookupPrivilegeName succeeded unexpectedly, length " << length << std::endl;
+        error = ERROR_BAD_ARGUMENTS;
+        return error;
+    }
+
+    error = GetLastError();
+
+    if (error != ERROR_INSUFFICIENT_BUFFER)
+    {
+        std::wcout << L"LookupPrivilegeName failed to get the required length, error " << error << std::endl;
+        return error;
+    }
+
+    luidName.resize(length + 1);
+
+    if (!LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t*>(luidName.c_str()), &length))
+    {
+        error = GetLastError();
+        std::wcout << L"LookupPrivilegeName failed with error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintLuidAndAttributes(const LUID_AND_ATTRIBUTES& la)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wstring luidName;
+
+    GetPrivilegeName(const_cast<PLUID>(&la.Luid), luidName);
+
+    std::wcout << L"LUID: " << luidName << L", attributes: 0x" << std::hex << la.Attributes << std::dec << L" ";
+
+#define OUT_ATTRIBUTE(x) \
+        if (la.Attributes & (x)) \
+        { \
+            std::wcout << L"|" << #x; \
+        }
+
+    OUT_ATTRIBUTE(SE_PRIVILEGE_USED_FOR_ACCESS);
+    OUT_ATTRIBUTE(SE_PRIVILEGE_REMOVED);
+    OUT_ATTRIBUTE(SE_PRIVILEGE_ENABLED);
+    OUT_ATTRIBUTE(SE_PRIVILEGE_ENABLED_BY_DEFAULT);
+
+#undef OUT_ATTRIBUTE
+
+    std::wcout << std::endl;
+
+    return error;
+}
+
+DWORD PrintTokenPrivileges(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_PRIVILEGES privileges;
+
+    error = GetTokenInformation(tokenHandle, TokenPrivileges, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        privileges = (PTOKEN_PRIVILEGES)buffer.get();
+
+        for (DWORD i = 0; i < privileges->PrivilegeCount; i++)
+        {
+            std::wcout << L"TokenPrivileges[:" << i << L"]:" << std::endl;
+            PrintLuidAndAttributes(privileges->Privileges[i]);
+        }
+    }
+    else
+    {
+        std::wcout << L"Failed to get TokenGroups info, error " << error << std::endl;
+    }
+
+    return error;
+}
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -145,6 +230,7 @@ int wmain(int argc, wchar_t* argv[])
 
         PrintTokenUser(tokenHandle);
         PrintTokenGroups(tokenHandle);
+        PrintTokenPrivileges(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

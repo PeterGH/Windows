@@ -346,7 +346,24 @@ DWORD PrintAcl(const PACL acl)
             {
                 std::wcout << L"Type: " << AceType.at(aceHeader->AceType);
             }
-            std::wcout << L", Flags: 0x" << std::hex << aceHeader->AceFlags << std::dec;
+            std::wcout << L", Flags: 0x" << std::hex << aceHeader->AceFlags << std::dec << L" ";
+
+#define OUT_ATTRIBUTE(x) \
+        if (aceHeader->AceFlags & (x)) \
+        { \
+            std::wcout << L"|" << #x; \
+        }
+
+            OUT_ATTRIBUTE(FAILED_ACCESS_ACE_FLAG);
+            OUT_ATTRIBUTE(SUCCESSFUL_ACCESS_ACE_FLAG);
+            OUT_ATTRIBUTE(INHERITED_ACE);
+            OUT_ATTRIBUTE(INHERIT_ONLY_ACE);
+            OUT_ATTRIBUTE(NO_PROPAGATE_INHERIT_ACE);
+            OUT_ATTRIBUTE(CONTAINER_INHERIT_ACE);
+            OUT_ATTRIBUTE(OBJECT_INHERIT_ACE);
+
+#undef OUT_ATTRIBUTE
+
             std::wcout << L", Size: " << aceHeader->AceSize << std::endl;
         }
         else

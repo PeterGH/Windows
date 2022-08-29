@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <sddl.h>
+#include <map>
 #include <iostream>
 #include <string>
 
@@ -104,7 +105,7 @@ DWORD PrintTokenGroups(HANDLE tokenHandle)
 
         for (DWORD i = 0; i < groups->GroupCount; i++)
         {
-            std::wcout << L"TokenGroups[:" << i << L"]:" << std::endl;
+            std::wcout << L"TokenGroups[" << i << L"]:" << std::endl;
             PrintSidAndAttributes(groups->Groups[i]);
         }
     }
@@ -121,7 +122,7 @@ DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
     DWORD error = ERROR_SUCCESS;
     DWORD length = 0;
 
-    if (LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t *>(luidName.c_str()), &length))
+    if (LookupPrivilegeNameW(nullptr, luid, nullptr, &length))
     {
         std::wcout << L"LookupPrivilegeName succeeded unexpectedly, length " << length << std::endl;
         error = ERROR_BAD_ARGUMENTS;
@@ -188,13 +189,194 @@ DWORD PrintTokenPrivileges(HANDLE tokenHandle)
 
         for (DWORD i = 0; i < privileges->PrivilegeCount; i++)
         {
-            std::wcout << L"TokenPrivileges[:" << i << L"]:" << std::endl;
+            std::wcout << L"TokenPrivileges[" << i << L"]:" << std::endl;
             PrintLuidAndAttributes(privileges->Privileges[i]);
         }
     }
     else
     {
         std::wcout << L"Failed to get TokenGroups info, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintTokenOwner(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_OWNER owner;
+    LPWSTR sid = nullptr;
+
+    error = GetTokenInformation(tokenHandle, TokenOwner, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        owner = (PTOKEN_OWNER)buffer.get();
+
+        if (ConvertSidToStringSidW(owner->Owner, &sid))
+        {
+            std::wcout << L"TokenOwner: " << std::wstring(sid) << std::endl;
+
+            if (LocalFree(sid) != NULL)
+            {
+                std::wcout << L"LocalFree failed with error " << GetLastError() << std::endl;
+            }
+        }
+        else
+        {
+            error = GetLastError();
+            std::wcout << L"TokenOwner: failed to convert, error " << error << std::endl;
+        }
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenOwner: failed to get, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintTokenPrimaryGroup(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_PRIMARY_GROUP primaryGroup;
+    LPWSTR sid = nullptr;
+
+    error = GetTokenInformation(tokenHandle, TokenPrimaryGroup, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        primaryGroup = (PTOKEN_PRIMARY_GROUP)buffer.get();
+
+        if (ConvertSidToStringSidW(primaryGroup->PrimaryGroup, &sid))
+        {
+            std::wcout << L"TokenPrimaryGroup: " << std::wstring(sid) << std::endl;
+
+            if (LocalFree(sid) != NULL)
+            {
+                std::wcout << L"LocalFree failed with error " << GetLastError() << std::endl;
+            }
+        }
+        else
+        {
+            error = GetLastError();
+            std::wcout << L"TokenPrimaryGroup: failed to convert, error " << error << std::endl;
+        }
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenPrimaryGroup: failed to get, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+#define map_entry(x) {x, L#x}
+
+const std::map<int, std::wstring> AceType =
+{
+    map_entry(ACCESS_ALLOWED_ACE_TYPE),
+    map_entry(ACCESS_DENIED_ACE_TYPE),
+    map_entry(SYSTEM_AUDIT_ACE_TYPE),
+    map_entry(SYSTEM_ALARM_ACE_TYPE),
+    map_entry(ACCESS_ALLOWED_COMPOUND_ACE_TYPE),
+    map_entry(ACCESS_ALLOWED_OBJECT_ACE_TYPE),
+    map_entry(ACCESS_DENIED_OBJECT_ACE_TYPE),
+    map_entry(SYSTEM_AUDIT_OBJECT_ACE_TYPE),
+    map_entry(SYSTEM_ALARM_OBJECT_ACE_TYPE),
+    map_entry(ACCESS_ALLOWED_CALLBACK_ACE_TYPE),
+    map_entry(ACCESS_DENIED_CALLBACK_ACE_TYPE),
+    map_entry(ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE),
+    map_entry(ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE),
+    map_entry(SYSTEM_AUDIT_CALLBACK_ACE_TYPE),
+    map_entry(SYSTEM_ALARM_CALLBACK_ACE_TYPE),
+    map_entry(SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE),
+    map_entry(SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE),
+    map_entry(SYSTEM_MANDATORY_LABEL_ACE_TYPE),
+    map_entry(SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE),
+    map_entry(SYSTEM_SCOPED_POLICY_ID_ACE_TYPE),
+    map_entry(SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE),
+    map_entry(SYSTEM_ACCESS_FILTER_ACE_TYPE)
+};
+
+DWORD PrintAcl(const PACL acl)
+{
+    DWORD error = ERROR_SUCCESS;
+    ACL_REVISION_INFORMATION aclRevision = { 0 };
+    ACL_SIZE_INFORMATION aclSize = { 0 };
+    LPVOID ace = nullptr;
+    PACE_HEADER aceHeader = nullptr;
+
+    if (GetAclInformation(const_cast<PACL>(acl), &aclRevision, sizeof(ACL_REVISION_INFORMATION), AclRevisionInformation))
+    {
+        std::wcout << L"AclRevision: " << aclRevision.AclRevision;
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"AclRevision: error " << error;
+    }
+
+    if (GetAclInformation(const_cast<PACL>(acl), &aclSize, sizeof(ACL_SIZE_INFORMATION), AclSizeInformation))
+    {
+        std::wcout << L", AclCount: " << aclSize.AceCount << L", AclBytesInUse: " << aclSize.AclBytesInUse << L", AclBytesFree: " << aclSize.AclBytesFree << std::endl;
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L", AclSize: error " << error << std::endl;
+    }
+
+    for (DWORD i = 0; i < aclSize.AceCount; i++)
+    {
+        std::wcout << L"ACE[" << i << L"]:" << std::endl;
+
+        if (GetAce(const_cast<PACL>(acl), i, &ace))
+        {
+            aceHeader = (PACE_HEADER)ace;
+            if (AceType.find(aceHeader->AceType) == AceType.end())
+            {
+                std::wcout << L"Type: " << aceHeader->AceType;
+            }
+            else
+            {
+                std::wcout << L"Type: " << AceType.at(aceHeader->AceType);
+            }
+            std::wcout << L", Flags: 0x" << std::hex << aceHeader->AceFlags << std::dec;
+            std::wcout << L", Size: " << aceHeader->AceSize << std::endl;
+        }
+        else
+        {
+            error = GetLastError();
+            std::wcout << L"GetAce failed with error " << error << std::endl;
+        }
+    }
+
+    return error;
+}
+
+DWORD PrintTokenDefaultDacl(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_DEFAULT_DACL defaultDacl;
+
+    error = GetTokenInformation(tokenHandle, TokenDefaultDacl, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        defaultDacl = (PTOKEN_DEFAULT_DACL)buffer.get();
+        std::wcout << L"TokenDefaultDacl:" << std::endl;
+        PrintAcl(defaultDacl->DefaultDacl);
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenDefaultDacl: failed to get, error " << error << std::endl;
     }
 
     return error;
@@ -231,6 +413,9 @@ int wmain(int argc, wchar_t* argv[])
         PrintTokenUser(tokenHandle);
         PrintTokenGroups(tokenHandle);
         PrintTokenPrivileges(tokenHandle);
+        PrintTokenOwner(tokenHandle);
+        PrintTokenPrimaryGroup(tokenHandle);
+        PrintTokenDefaultDacl(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

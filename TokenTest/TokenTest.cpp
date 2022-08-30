@@ -303,6 +303,93 @@ const std::map<int, std::wstring> AceType =
     map_entry(SYSTEM_ACCESS_FILTER_ACE_TYPE)
 };
 
+DWORD PrintAccessMask(ACCESS_MASK mask)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wcout << L"AccessMask: 0x" << std::hex << mask << std::dec << L" ";
+
+#define OUT_MASK(x) \
+    if (mask & (x)) \
+    { \
+        std::wcout << L"|" << #x; \
+    }
+
+    // Generic rights
+    OUT_MASK(GENERIC_READ);
+    OUT_MASK(GENERIC_WRITE);
+    OUT_MASK(GENERIC_EXECUTE);
+    OUT_MASK(GENERIC_ALL);
+    OUT_MASK(MAXIMUM_ALLOWED);
+    OUT_MASK(ACCESS_SYSTEM_SECURITY);
+    // Standard rights
+    OUT_MASK(SYNCHRONIZE);
+    OUT_MASK(WRITE_OWNER);
+    OUT_MASK(WRITE_DAC);
+    OUT_MASK(READ_CONTROL);
+    OUT_MASK(DELETE);
+
+#undef OUT_MASK
+
+    std::wcout << std::endl;
+    return error;
+}
+
+DWORD PrintSid(const PSID sid)
+{
+    DWORD error = ERROR_SUCCESS;
+    LPWSTR strSid = nullptr;
+
+    if (sid == nullptr)
+    {
+        error = ERROR_INVALID_SID;
+        std::wcout << L"Sid: nullptr, error " << error << std::endl;
+    }
+    else if (ConvertSidToStringSidW(const_cast<PSID>(sid), &strSid))
+    {
+        std::wcout << L"Sid: " << std::wstring(strSid) << std::endl;
+
+        if (LocalFree(strSid) != NULL)
+        {
+            std::wcout << L"LocalFree failed with error " << GetLastError() << std::endl;
+        }
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"Sid: failed to convert, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintAccessAllowedAce(const PACCESS_ALLOWED_ACE ace)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    if (ace == nullptr)
+    {
+        return ERROR_INVALID_ACL;
+    }
+
+    PrintAccessMask(ace->Mask);
+    PrintSid(&ace->SidStart);
+    return error;
+}
+
+DWORD PrintAccessAllowedCallbackAce(const PACCESS_ALLOWED_CALLBACK_ACE ace)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    if (ace == nullptr)
+    {
+        return ERROR_INVALID_ACL;
+    }
+
+    PrintAccessMask(ace->Mask);
+    PrintSid(&ace->SidStart);
+    return error;
+}
+
 DWORD PrintAcl(const PACL acl)
 {
     DWORD error = ERROR_SUCCESS;
@@ -310,6 +397,11 @@ DWORD PrintAcl(const PACL acl)
     ACL_SIZE_INFORMATION aclSize = { 0 };
     LPVOID ace = nullptr;
     PACE_HEADER aceHeader = nullptr;
+
+    if (acl == nullptr)
+    {
+        return ERROR_INVALID_ACL;
+    }
 
     if (GetAclInformation(const_cast<PACL>(acl), &aclRevision, sizeof(ACL_REVISION_INFORMATION), AclRevisionInformation))
     {
@@ -370,6 +462,18 @@ DWORD PrintAcl(const PACL acl)
         {
             error = GetLastError();
             std::wcout << L"GetAce failed with error " << error << std::endl;
+        }
+
+        switch (aceHeader->AceType)
+        {
+        case ACCESS_ALLOWED_ACE_TYPE:
+            PrintAccessAllowedAce((PACCESS_ALLOWED_ACE)ace);
+            break;
+        case ACCESS_ALLOWED_CALLBACK_ACE_TYPE:
+            PrintAccessAllowedCallbackAce((PACCESS_ALLOWED_CALLBACK_ACE)ace);
+            break;
+        default:
+            break;
         }
     }
 

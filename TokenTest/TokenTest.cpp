@@ -503,6 +503,64 @@ DWORD PrintTokenDefaultDacl(HANDLE tokenHandle)
     return error;
 }
 
+DWORD PrintTokenSource(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_SOURCE source;
+
+    error = GetTokenInformation(tokenHandle, TokenSource, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        source = (PTOKEN_SOURCE)buffer.get();
+        std::wcout << L"TokenSource:" << std::endl;
+        std::wcout << L"Name: " << source->SourceName << L", Luid: 0x" << std::hex << source->SourceIdentifier.HighPart << L":" << source->SourceIdentifier.LowPart << std::dec << std::endl;
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenSource: failed to get, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintTokenType(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_TYPE type;
+
+    error = GetTokenInformation(tokenHandle, TokenType, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        type = (PTOKEN_TYPE)buffer.get();
+        std::wcout << L"TokenType: ";
+        switch (*type)
+        {
+        case TokenPrimary:
+            std::wcout << L"TokenPrimary" << std::endl;
+            break;
+        case TokenImpersonation:
+            std::wcout << L"TokenImpersonation" << std::endl;
+            break;
+        default:
+            std::wcout << L"Unknown" << std::endl;
+            error = ERROR_INVALID_TOKEN;
+            break;
+        }
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenType: failed to get, error " << error << std::endl;
+    }
+
+    return error;
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
@@ -537,6 +595,8 @@ int wmain(int argc, wchar_t* argv[])
         PrintTokenOwner(tokenHandle);
         PrintTokenPrimaryGroup(tokenHandle);
         PrintTokenDefaultDacl(tokenHandle);
+        PrintTokenSource(tokenHandle);
+        PrintTokenType(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

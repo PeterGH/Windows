@@ -1,7 +1,9 @@
 #include <Windows.h>
 #include <sddl.h>
 #include <map>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
@@ -561,6 +563,89 @@ DWORD PrintTokenType(HANDLE tokenHandle)
     return error;
 }
 
+DWORD PrintTokenImpersonationLevel(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PSECURITY_IMPERSONATION_LEVEL level;
+
+    error = GetTokenInformation(tokenHandle, TokenImpersonationLevel, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        level = (PSECURITY_IMPERSONATION_LEVEL)buffer.get();
+        std::wcout << L"TokenImpersonationLevel: " << *level << std::endl;
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenImpersonationLevel: failed to get, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD FileTimeToSystemTimeString(const LARGE_INTEGER &fileTime, std::wstring& systemTime)
+{
+    DWORD error = ERROR_SUCCESS;
+    FILETIME ft;
+    SYSTEMTIME st;
+    std::wostringstream oss;
+
+    ft.dwHighDateTime = fileTime.HighPart;
+    ft.dwLowDateTime = fileTime.LowPart;
+
+    if (FileTimeToSystemTime(&ft, &st))
+    {
+        oss << std::setfill(L'0') << st.wYear << L"-" << std::setw(2) << st.wMonth << L"-" << std::setw(2) << st.wDay << L" " << std::setw(2) << st.wHour << L":" << std::setw(2) << st.wMinute << L":" << std::setw(2) << st.wSecond << L'.' << std::setw(3) << st.wMilliseconds << std::endl;
+        systemTime = oss.str();
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"FileTimeToSystemTimeString(" << fileTime.QuadPart << L") failed with error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintTokenStatistics(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_STATISTICS stat;
+
+    error = GetTokenInformation(tokenHandle, TokenStatistics, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        stat = (PTOKEN_STATISTICS)buffer.get();
+        std::wcout << L"TokenStatistics:" << std::endl;
+        std::wcout << L"TokenId: 0x" << std::hex << stat->TokenId.HighPart << L":" << stat->TokenId.LowPart << std::dec << L", ";
+        std::wcout << L"AuthenticationId: 0x" << std::hex << stat->AuthenticationId.HighPart << L":" << stat->AuthenticationId.LowPart << std::dec << L", ";
+        
+        std::wstring expirationTime;
+        error = FileTimeToSystemTimeString(stat->ExpirationTime, expirationTime);
+        if (error == ERROR_SUCCESS)
+        {
+            std::wcout << L"ExpirationTime: " << expirationTime;
+        }
+        else
+        {
+            std::wcout << L"ExpirationTime: " << stat->ExpirationTime.QuadPart;
+        }
+        std::wcout << std::endl;
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenStatistics: failed to get, error " << error << std::endl;
+    }
+
+    return error;
+
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
@@ -597,6 +682,8 @@ int wmain(int argc, wchar_t* argv[])
         PrintTokenDefaultDacl(tokenHandle);
         PrintTokenSource(tokenHandle);
         PrintTokenType(tokenHandle);
+        PrintTokenImpersonationLevel(tokenHandle);
+        PrintTokenStatistics(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

@@ -6,6 +6,8 @@
 #include <sstream>
 #include <string>
 
+#define STRING(x) L#x
+
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
     DWORD error = ERROR_SUCCESS;
@@ -93,13 +95,18 @@ DWORD PrintTokenUser(HANDLE tokenHandle)
     return error;
 }
 
-DWORD PrintTokenGroups(HANDLE tokenHandle)
+DWORD PrintTokenGroups(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass)
 {
     DWORD error = ERROR_SUCCESS;
     std::unique_ptr<byte[]> buffer;
     PTOKEN_GROUPS groups;
 
-    error = GetTokenInformation(tokenHandle, TokenGroups, buffer);
+    if (infoClass != TokenGroups && infoClass != TokenRestrictedSids)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    error = GetTokenInformation(tokenHandle, infoClass, buffer);
 
     if (error == ERROR_SUCCESS)
     {
@@ -107,13 +114,13 @@ DWORD PrintTokenGroups(HANDLE tokenHandle)
 
         for (DWORD i = 0; i < groups->GroupCount; i++)
         {
-            std::wcout << L"TokenGroups[" << i << L"]:" << std::endl;
+            std::wcout << STRING(infoClass) << L"[" << i << L"]:" << std::endl;
             PrintSidAndAttributes(groups->Groups[i]);
         }
     }
     else
     {
-        std::wcout << L"Failed to get TokenGroups info, error " << error << std::endl;
+        std::wcout << L"Failed to get " << STRING(infoClass) << L" info, error " << error << std::endl;
     }
 
     return error;
@@ -597,7 +604,7 @@ DWORD FileTimeToSystemTimeString(const LARGE_INTEGER &fileTime, std::wstring& sy
 
     if (FileTimeToSystemTime(&ft, &st))
     {
-        oss << std::setfill(L'0') << st.wYear << L"-" << std::setw(2) << st.wMonth << L"-" << std::setw(2) << st.wDay << L" " << std::setw(2) << st.wHour << L":" << std::setw(2) << st.wMinute << L":" << std::setw(2) << st.wSecond << L'.' << std::setw(3) << st.wMilliseconds << std::endl;
+        oss << std::setfill(L'0') << st.wYear << L"-" << std::setw(2) << st.wMonth << L"-" << std::setw(2) << st.wDay << L" " << std::setw(2) << st.wHour << L":" << std::setw(2) << st.wMinute << L":" << std::setw(2) << st.wSecond << L'.' << std::setw(3) << st.wMilliseconds;
         systemTime = oss.str();
     }
     else
@@ -624,17 +631,25 @@ DWORD PrintTokenStatistics(HANDLE tokenHandle)
         std::wcout << L"TokenId: 0x" << std::hex << stat->TokenId.HighPart << L":" << stat->TokenId.LowPart << std::dec << L", ";
         std::wcout << L"AuthenticationId: 0x" << std::hex << stat->AuthenticationId.HighPart << L":" << stat->AuthenticationId.LowPart << std::dec << L", ";
         
+        std::wcout << L"ExpirationTime: 0x" << std::hex << stat->ExpirationTime.QuadPart << std::dec << L"[";
         std::wstring expirationTime;
         error = FileTimeToSystemTimeString(stat->ExpirationTime, expirationTime);
         if (error == ERROR_SUCCESS)
         {
-            std::wcout << L"ExpirationTime: " << expirationTime;
+            std::wcout << expirationTime;
         }
         else
         {
-            std::wcout << L"ExpirationTime: " << stat->ExpirationTime.QuadPart;
+            std::wcout << L"Invalid";
         }
-        std::wcout << std::endl;
+        std::wcout << L"]" << std::endl;
+
+        std::wcout << L"ImpersonationLevel: " << stat->ImpersonationLevel << std::endl;
+
+        std::wcout << L"Dynamic[Charged|Available]: [" << stat->DynamicCharged << L"|" << stat->DynamicAvailable << L"]" << std::endl;
+        std::wcout << L"[Group|Privilege]Count: [" << stat->GroupCount << L"|" << stat->PrivilegeCount << L"]" << std::endl;
+
+        std::wcout << L"ModifiedId: 0x" << std::hex << stat->ModifiedId.HighPart << L":" << stat->ModifiedId.LowPart << std::dec << std::endl;
     }
     else
     {
@@ -643,7 +658,28 @@ DWORD PrintTokenStatistics(HANDLE tokenHandle)
     }
 
     return error;
+}
 
+DWORD PrintTokenSessionId(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PDWORD sessionId;
+
+    error = GetTokenInformation(tokenHandle, TokenSessionId, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        sessionId = (PDWORD)buffer.get();
+        std::wcout << L"TokenSessionId: " << *sessionId << std::endl;
+    }
+    else
+    {
+        error = GetLastError();
+        std::wcout << L"TokenSessionId: failed to get, error " << error << std::endl;
+    }
+
+    return error;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -675,7 +711,7 @@ int wmain(int argc, wchar_t* argv[])
         std::wcout << L"OpenProcessToken(" << processHandle << L") succeeded with token handle " << tokenHandle << std::endl;
 
         PrintTokenUser(tokenHandle);
-        PrintTokenGroups(tokenHandle);
+        PrintTokenGroups(tokenHandle, TokenGroups);
         PrintTokenPrivileges(tokenHandle);
         PrintTokenOwner(tokenHandle);
         PrintTokenPrimaryGroup(tokenHandle);
@@ -684,6 +720,8 @@ int wmain(int argc, wchar_t* argv[])
         PrintTokenType(tokenHandle);
         PrintTokenImpersonationLevel(tokenHandle);
         PrintTokenStatistics(tokenHandle);
+        PrintTokenGroups(tokenHandle, TokenRestrictedSids);
+        PrintTokenSessionId(tokenHandle);
 
         if (!CloseHandle(tokenHandle))
         {

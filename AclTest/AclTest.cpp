@@ -1,5 +1,16 @@
 #include <Windows.h>
+#include <AclAPI.h>
 #include <iostream>
+
+#define RETURN_IF_FAILED(e) \
+    { \
+        DWORD e2 = (e); \
+        if (e2 != ERROR_SUCCESS) \
+        { \
+            std::wcerr << L"[ERROR] " << __FUNCTION__ << L" returns " << e2 << L" at " << __FILE__ << L" line " << __LINE__ << std::endl; \
+            return e2; \
+        } \
+    }
 
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
@@ -80,23 +91,28 @@ DWORD PrintLuidAndAttributes(const LUID_AND_ATTRIBUTES& la)
     return error;
 }
 
+DWORD PrintPrivileges(const TOKEN_PRIVILEGES& privileges)
+{
+    for (DWORD i = 0; i < privileges.PrivilegeCount; i++)
+    {
+        std::wcout << L"Privileges[" << i << L"]:" << std::endl;
+        PrintLuidAndAttributes(privileges.Privileges[i]);
+    }
+
+    return ERROR_SUCCESS;
+}
+
 DWORD PrintTokenPrivileges(HANDLE tokenHandle)
 {
     DWORD error = ERROR_SUCCESS;
     std::unique_ptr<byte[]> buffer;
-    PTOKEN_PRIVILEGES privileges;
 
     error = GetTokenInformation(tokenHandle, TokenPrivileges, buffer);
 
     if (error == ERROR_SUCCESS)
     {
-        privileges = (PTOKEN_PRIVILEGES)buffer.get();
-
-        for (DWORD i = 0; i < privileges->PrivilegeCount; i++)
-        {
-            std::wcout << L"TokenPrivileges[" << i << L"]:" << std::endl;
-            PrintLuidAndAttributes(privileges->Privileges[i]);
-        }
+        std::wcout << L"TokenPrivileges:" << std::endl;
+        PrintPrivileges(*((PTOKEN_PRIVILEGES)buffer.get()));
     }
     else
     {
@@ -127,20 +143,27 @@ DWORD SetPrivilege(HANDLE tokenHandle, const std::wstring& privilege, bool enabl
 
     prevStateSize = sizeof(prevState);
 
-    if (!AdjustTokenPrivileges(
+    AdjustTokenPrivileges(
         tokenHandle,
         FALSE,
         &privileges,
         prevStateSize,
         &prevState,
-        &prevStateSize))
+        &prevStateSize);
+
+    // AdjustTokenPrivileges returns success even when some privilegs are not set.
+    // Must use GetLastError to check the result.
+    error = GetLastError();
+
+    if (error != ERROR_SUCCESS)
     {
-        error = GetLastError();
         std::wcerr << L"Failed to set token privilege " << privilege << " to " << enable << std::endl;
         return error;
     }
 
     std::wcout << L"Set token privilege " << privilege << " to " << enable << std::endl;
+    std::wcout << L"Token previous privilege:" << std::endl;
+    PrintPrivileges(prevState);
 
     return error;
 }
@@ -294,27 +317,203 @@ public:
     }
 };
 
+class Handle
+{
+private:
+    HANDLE _handle;
+
+public:
+    Handle(HANDLE handle) : _handle(handle) {}
+    Handle() : Handle(INVALID_HANDLE_VALUE) {}
+
+    ~Handle()
+    {
+        Close();
+    }
+
+    HANDLE& Get() { return _handle; }
+
+    Handle& operator=(HANDLE handle)
+    {
+        _handle = handle;
+        std::wcout << L"Asigned handle 0x" << std::hex << handle << std::dec << std::endl;
+        return *this;
+    }
+
+    bool operator==(HANDLE handle)
+    {
+        std::wcout << L"Check if handle 0x" << std::hex << _handle << std::dec
+            << L"==0x" << std::hex << handle << std::dec << std::endl;
+        return _handle == handle;
+    }
+
+    void Attach(HANDLE handle)
+    {
+        if (_handle != INVALID_HANDLE_VALUE)
+        {
+            Close();
+        }
+
+        _handle = handle;
+        std::wcout << L"Attached handle 0x" << std::hex << handle << std::dec << std::endl;
+    }
+
+    DWORD Close()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_handle == INVALID_HANDLE_VALUE)
+        {
+            std::wcout << L"Handle not opened or already closed." << std::endl;
+            return error;
+        }
+
+        if (CloseHandle(_handle))
+        {
+            std::wcout << L"Closed handle 0x" << std::hex << _handle << std::dec << std::endl;
+            _handle = INVALID_HANDLE_VALUE;
+        }
+        else
+        {
+            error = GetLastError();
+            std::wcerr << L"Failed to close handle 0x" << std::hex << _handle << std::dec << std::endl;
+        }
+
+        return error;
+    }
+};
+
+DWORD SetPrivileges()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken token;
+
+    error = token.Open();
+    RETURN_IF_FAILED(error);
+
+    error = SetPrivilege(token.Handle(), SE_BACKUP_NAME, true);
+    RETURN_IF_FAILED(error);
+
+    error = SetPrivilege(token.Handle(), SE_RESTORE_NAME, true);
+    RETURN_IF_FAILED(error);
+        
+    error = SetPrivilege(token.Handle(), SE_SECURITY_NAME, true);
+    RETURN_IF_FAILED(error);
+        
+    PrintTokenPrivileges(token.Handle());
+
+    return error;
+}
+
+class SecurityDescriptor
+{
+private:
+    PSECURITY_DESCRIPTOR _pSecurityDescriptor;
+    PSID _pOwner;
+    PSID _pGroup;
+    PACL _pDacl;
+    PACL _pSacl;
+
+public:
+    SecurityDescriptor()
+        : _pSecurityDescriptor(NULL), _pOwner(NULL), _pGroup(NULL), _pDacl(NULL), _pSacl(NULL)
+    {}
+
+    ~SecurityDescriptor()
+    {
+        Free();
+    }
+
+    PSECURITY_DESCRIPTOR& PSecurityDescriptor() { return _pSecurityDescriptor; }
+    PSID& POwner() { return _pOwner; }
+    PSID& PGroup() { return _pGroup; }
+    PACL& PDacl() { return _pDacl; }
+    PACL& PSacl() { return _pSacl; }
+
+    DWORD Free()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_pSecurityDescriptor != NULL)
+        {
+            if (LocalFree(_pSecurityDescriptor) != NULL)
+            {
+                error = GetLastError();
+                std::wcerr << L"Failed to free security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << std::endl;
+                return error;
+            }
+
+            std::wcout << L"Freed security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << std::endl;
+
+            _pSecurityDescriptor = NULL;
+            _pOwner = NULL;
+            _pGroup = NULL;
+            _pDacl = NULL;
+            _pSacl = NULL;
+        }
+
+        return error;
+    }
+};
+
+DWORD PrintFileSecurityDescriptor(const std::wstring& file)
+{
+    DWORD error = ERROR_SUCCESS;
+    Handle fileHandle;
+    SecurityDescriptor securityDescriptor;
+
+    fileHandle = CreateFileW(
+        file.c_str(),
+        GENERIC_READ|ACCESS_SYSTEM_SECURITY|WRITE_OWNER|WRITE_DAC|READ_CONTROL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr);
+
+    if (fileHandle == INVALID_HANDLE_VALUE)
+    {
+        error = GetLastError();
+        std::wcerr << L"Failed to open " << file << L", error=" << error << std::endl;
+        return error;
+    }
+
+    std::wcout << L"Opened " << file << std::endl;
+
+    error = GetSecurityInfo(
+        fileHandle.Get(),
+        SE_FILE_OBJECT,
+        OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION,
+        &securityDescriptor.POwner(),
+        &securityDescriptor.PGroup(),
+        &securityDescriptor.PDacl(),
+        &securityDescriptor.PSacl(),
+        &securityDescriptor.PSecurityDescriptor());
+
+    if (error != ERROR_SUCCESS)
+    {
+        std::wcerr << L"Failed to get security info for " << file << std::endl;
+    }
+
+    return error;
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
-    std::cout << "Hello World!\n";
-
-    {
-        ThreadToken token;
-        token.Open();
-    }
+    DWORD error = ERROR_SUCCESS;
 
     Impersonator impersonator;
-    impersonator.BeginImpersonateSelf();
+    error = impersonator.BeginImpersonateSelf();
+    RETURN_IF_FAILED(error);
 
+    error = SetPrivileges();
+    RETURN_IF_FAILED(error);
+
+    if (argc > 1)
     {
-        ThreadToken token;
-        if (token.Open() == ERROR_SUCCESS)
-        {
-            PrintTokenPrivileges(token.Handle());
-
-            SetPrivilege(token.Handle(), SE_BACKUP_NAME, true);
-
-            PrintTokenPrivileges(token.Handle());
-        }
+        error = PrintFileSecurityDescriptor(argv[1]);
+        RETURN_IF_FAILED(error);
     }
+
+    return error;
 }

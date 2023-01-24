@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <AclAPI.h>
+#include <sddl.h>
 #include <iostream>
 
 #define RETURN_IF_FAILED(e) \
@@ -430,6 +431,41 @@ public:
     PACL& PDacl() { return _pDacl; }
     PACL& PSacl() { return _pSacl; }
 
+    std::wstring Str()
+    {
+        DWORD error = ERROR_SUCCESS;
+        LPWSTR pstr = NULL;
+        ULONG length = 0;
+        std::wstring strSecurityDescriptor;
+
+        if (_pSecurityDescriptor == NULL)
+        {
+            return strSecurityDescriptor;
+        }
+
+        if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            _pSecurityDescriptor,
+            SDDL_REVISION_1,
+            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION,
+            &pstr,
+            &length))
+        {
+            error = GetLastError();
+            std::wcerr << L"Failed to convert security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << L" to string format, error=" << error << std::endl;
+            return strSecurityDescriptor;
+        }
+
+        strSecurityDescriptor.assign(pstr, length);
+
+        if (LocalFree(pstr) != NULL)
+        {
+            error = GetLastError();
+            std::wcerr << L"Failed to free string security descriptor 0x" << std::hex << pstr << std::dec << std::endl;
+        }
+
+        return strSecurityDescriptor;
+    }
+
     DWORD Free()
     {
         DWORD error = ERROR_SUCCESS;
@@ -493,7 +529,10 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
     if (error != ERROR_SUCCESS)
     {
         std::wcerr << L"Failed to get security info for " << file << std::endl;
+        return error;
     }
+
+    std::wcout << L"Security descriptor is:\"" << securityDescriptor.Str() << L"\"" << std::endl;
 
     return error;
 }

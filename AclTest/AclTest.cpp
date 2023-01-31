@@ -401,7 +401,7 @@ DWORD SetPrivileges()
     error = SetPrivilege(token.Handle(), SE_SECURITY_NAME, true);
     RETURN_IF_FAILED(error);
         
-    PrintTokenPrivileges(token.Handle());
+    // PrintTokenPrivileges(token.Handle());
 
     return error;
 }
@@ -490,6 +490,27 @@ public:
 
         return error;
     }
+
+    DWORD Print()
+    {
+        DWORD error = ERROR_SUCCESS;
+        PBYTE pb;
+        PWORD pw;
+
+        if (_pSecurityDescriptor == NULL)
+        {
+            return error;
+        }
+
+        pb = (PBYTE)_pSecurityDescriptor;
+        std::wcout << L"SecurityDescriptor 0x" << std::hex << pb << std::dec << std::endl;
+        std::wcout << L"  Revision: " << pb[0] << std::endl;
+        std::wcout << L"  Sbz1: " << pb[1] << std::endl;
+        pw = (PWORD)(pb + 2);
+        std::wcout << L"  Control: 0x" << std::hex << *pw << std::dec << std::endl;
+
+        return error;
+    }
 };
 
 DWORD PrintFileSecurityDescriptor(const std::wstring& file)
@@ -497,6 +518,7 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
     DWORD error = ERROR_SUCCESS;
     Handle fileHandle;
     SecurityDescriptor securityDescriptor;
+    SECURITY_INFORMATION securityInfo;
 
     fileHandle = CreateFileW(
         file.c_str(),
@@ -516,10 +538,19 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
 
     std::wcout << L"Opened " << file << std::endl;
 
+    securityInfo =
+        OWNER_SECURITY_INFORMATION
+        | GROUP_SECURITY_INFORMATION
+        | DACL_SECURITY_INFORMATION
+        | SACL_SECURITY_INFORMATION
+        | LABEL_SECURITY_INFORMATION
+        | SCOPE_SECURITY_INFORMATION
+        | BACKUP_SECURITY_INFORMATION;
+
     error = GetSecurityInfo(
         fileHandle.Get(),
         SE_FILE_OBJECT,
-        OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION,
+        securityInfo,
         &securityDescriptor.POwner(),
         &securityDescriptor.PGroup(),
         &securityDescriptor.PDacl(),
@@ -533,6 +564,9 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
     }
 
     std::wcout << L"Security descriptor is:\"" << securityDescriptor.Str() << L"\"" << std::endl;
+
+    std::wcout << L"Dump:" << std::endl;
+    securityDescriptor.Print();
 
     return error;
 }

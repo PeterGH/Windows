@@ -13,6 +13,14 @@
         } \
     }
 
+#define RETURN_FAILURE(e) \
+    { \
+        DWORD e2 = (e); \
+        std::wcerr << L"[ERROR] " << __FUNCTION__ << L" returns " << e2 << L" at " << __FILE__ << L" line " << __LINE__ << std::endl; \
+        return e2; \
+    }
+
+
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
     DWORD error = ERROR_SUCCESS;
@@ -406,6 +414,55 @@ DWORD SetPrivileges()
     return error;
 }
 
+class Sid
+{
+private:
+    PSID _sid;
+    LPWSTR _str;
+
+public:
+    Sid(PSID sid) : _sid(sid), _str(NULL) {}
+
+    ~Sid()
+    {
+        Free();
+    }
+
+    std::wstring Str()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_str == NULL)
+        {
+            if (!ConvertSidToStringSidW(_sid, &_str))
+            {
+                error = GetLastError();
+                std::wcerr << L"ConvertSidToStringSidW(0x" << std::hex << _sid << std::dec << L") failed, error=" << error << std::endl;
+            }
+        }
+
+        return std::wstring(_str);
+    }
+
+    DWORD Free()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_str != NULL)
+        {
+            if (LocalFree(_str) != NULL)
+            {
+                error = GetLastError();
+                RETURN_FAILURE(error);
+            }
+
+            _str = NULL;
+        }
+
+        return error;
+    }
+};
+
 class SecurityDescriptor
 {
 private:
@@ -494,6 +551,10 @@ public:
     DWORD Print()
     {
         DWORD error = ERROR_SUCCESS;
+        DWORD revision = 0;
+        SECURITY_DESCRIPTOR_CONTROL control = { 0 };
+        PSID owner = NULL;
+        BOOL ownerDefaulted = FALSE;
         PBYTE pb;
         PWORD pw;
 
@@ -502,12 +563,64 @@ public:
             return error;
         }
 
+        if (!GetSecurityDescriptorControl(
+            _pSecurityDescriptor,
+            &control,
+            &revision))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
+        if (!GetSecurityDescriptorOwner(
+            _pSecurityDescriptor,
+            &owner,
+            &ownerDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
         pb = (PBYTE)_pSecurityDescriptor;
         std::wcout << L"SecurityDescriptor 0x" << std::hex << pb << std::dec << std::endl;
-        std::wcout << L"  Revision: " << pb[0] << std::endl;
+        std::wcout << L"  Revision: " << revision << L"[" << pb[0] << L"]" << std::endl;
         std::wcout << L"  Sbz1: " << pb[1] << std::endl;
         pw = (PWORD)(pb + 2);
-        std::wcout << L"  Control: 0x" << std::hex << *pw << std::dec << std::endl;
+        std::wcout << L"  Control: 0x" << std::hex << control << L"[" << *pw << L"]" << std::dec;
+
+#define OUT_CONTROL(x) \
+        if (control & (x)) \
+        { \
+            std::wcout << L"|" << #x; \
+        }
+
+        OUT_CONTROL(SE_SELF_RELATIVE);
+        OUT_CONTROL(SE_RM_CONTROL_VALID);
+        OUT_CONTROL(SE_SACL_PROTECTED);
+        OUT_CONTROL(SE_DACL_PROTECTED);
+        OUT_CONTROL(SE_SACL_AUTO_INHERITED);
+        OUT_CONTROL(SE_DACL_AUTO_INHERITED);
+        OUT_CONTROL(SE_SACL_AUTO_INHERIT_REQ);
+        OUT_CONTROL(SE_DACL_AUTO_INHERIT_REQ);
+        OUT_CONTROL(SE_SACL_DEFAULTED);
+        OUT_CONTROL(SE_SACL_PRESENT);
+        OUT_CONTROL(SE_DACL_DEFAULTED);
+        OUT_CONTROL(SE_DACL_PRESENT);
+        OUT_CONTROL(SE_GROUP_DEFAULTED);
+        OUT_CONTROL(SE_OWNER_DEFAULTED);
+
+#undef OUT_CONTROL
+
+        std::wcout << std::endl;
+
+        std::wcout << L"  Owner: 0x" << std::hex << owner << L"[" << _pOwner << L"]" << std::dec;
+        Sid ownerSid(owner);
+        std::wcout << ownerSid.Str() << std::endl;
+
+        if (owner != NULL)
+        {
+            std::wcout << L"  OwnerDefaulted: " << ownerDefaulted << std::endl;
+        }
 
         return error;
     }

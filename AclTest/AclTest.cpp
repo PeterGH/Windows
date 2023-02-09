@@ -463,6 +463,70 @@ public:
     }
 };
 
+class Acl
+{
+private:
+    PACL _acl;
+    ULONG _acesCount;
+    PEXPLICIT_ACCESS_W _aces;
+
+    DWORD Parse()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_aces == NULL)
+        {
+            error = GetExplicitEntriesFromAclW(_acl, &_acesCount, &_aces);
+
+            if (error != ERROR_SUCCESS)
+            {
+                std::wcerr << L"Acl::Parse() failed, error=" << error << std::endl;
+            }
+        }
+
+        return error;
+    }
+
+public:
+    Acl(PACL acl) : _acl(acl), _acesCount(0), _aces(NULL) {}
+    ~Acl()
+    {
+        Free();
+    }
+
+    ULONG AcesCount()
+    {
+        Parse();
+        return _acesCount;
+    }
+
+    PEXPLICIT_ACCESS_W Aces()
+    {
+        Parse();
+        return _aces;
+    }
+
+    DWORD Free()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_aces != NULL)
+        {
+            if (LocalFree(_aces) != NULL)
+            {
+                error = GetLastError();
+                RETURN_FAILURE(error);
+            }
+
+            _aces = NULL;
+        }
+
+        _acesCount = 0;
+
+        return error;
+    }
+};
+
 class SecurityDescriptor
 {
 private:
@@ -551,16 +615,30 @@ public:
     DWORD Print()
     {
         DWORD error = ERROR_SUCCESS;
+        DWORD length = 0;
         DWORD revision = 0;
         SECURITY_DESCRIPTOR_CONTROL control = { 0 };
         PSID owner = NULL;
         BOOL ownerDefaulted = FALSE;
+        PSID group = NULL;
+        BOOL groupDefaulted = FALSE;
+        PACL dacl = NULL;
+        BOOL daclPresent = FALSE;
+        BOOL daclDefaulted = FALSE;
+        PACL sacl = NULL;
+        BOOL saclPresent = FALSE;
+        BOOL saclDefaulted = FALSE;
         PBYTE pb;
         PWORD pw;
 
         if (_pSecurityDescriptor == NULL)
         {
             return error;
+        }
+
+        if (IsValidSecurityDescriptor(_pSecurityDescriptor))
+        {
+            length = GetSecurityDescriptorLength(_pSecurityDescriptor);
         }
 
         if (!GetSecurityDescriptorControl(
@@ -581,8 +659,38 @@ public:
             RETURN_FAILURE(error);
         }
 
+        if (!GetSecurityDescriptorGroup(
+            _pSecurityDescriptor,
+            &group,
+            &groupDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
+        if (!GetSecurityDescriptorDacl(
+            _pSecurityDescriptor,
+            &daclPresent,
+            &dacl,
+            &daclDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
+        if (!GetSecurityDescriptorSacl(
+            _pSecurityDescriptor,
+            &saclPresent,
+            &sacl,
+            &saclDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
         pb = (PBYTE)_pSecurityDescriptor;
         std::wcout << L"SecurityDescriptor 0x" << std::hex << pb << std::dec << std::endl;
+        std::wcout << L"  Length: " << length << std::endl;
         std::wcout << L"  Revision: " << revision << L"[" << pb[0] << L"]" << std::endl;
         std::wcout << L"  Sbz1: " << pb[1] << std::endl;
         pw = (PWORD)(pb + 2);
@@ -620,6 +728,33 @@ public:
         if (owner != NULL)
         {
             std::wcout << L"  OwnerDefaulted: " << ownerDefaulted << std::endl;
+        }
+
+        std::wcout << L"  Group: 0x" << std::hex << group << L"[" << _pGroup << L"]" << std::dec;
+        Sid groupSid(group);
+        std::wcout << groupSid.Str() << std::endl;
+
+        if (group != NULL)
+        {
+            std::wcout << L"  GroupDefaulted: " << groupDefaulted << std::endl;
+        }
+
+        if (daclPresent)
+        {
+            std::wcout << L" Dacl: 0x" << std::hex << dacl << L"[" << _pDacl << L"]" << std::dec << std::endl;
+            std::wcout << L" DaclDefaulted: " << daclDefaulted << std::endl;
+            Acl daclObj(dacl);
+            std::wcout << L"  Dacl ACEs Count: " << daclObj.AcesCount() << std::endl;
+            std::wcout << L"  Dacl ACEs: 0x" << std::hex << daclObj.Aces() << std::dec << std::endl;
+        }
+
+        if (saclPresent)
+        {
+            std::wcout << L" Sacl: 0x" << std::hex << sacl << L"[" << _pSacl << L"]" << std::dec << std::endl;
+            std::wcout << L" SaclDefaulted: " << saclDefaulted << std::endl;
+            Acl saclObj(sacl);
+            std::wcout << L"  Sacl ACEs Count: " << saclObj.AcesCount() << std::endl;
+            std::wcout << L"  Sacl ACEs: 0x" << std::hex << saclObj.Aces() << std::dec << std::endl;
         }
 
         return error;

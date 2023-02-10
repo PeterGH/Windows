@@ -2,6 +2,7 @@
 #include <AclAPI.h>
 #include <sddl.h>
 #include <iostream>
+#include <sstream>
 
 #define RETURN_IF_FAILED(e) \
     { \
@@ -527,6 +528,89 @@ public:
     }
 };
 
+DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wostringstream oss;
+
+    oss << L"[Permissions:0x" << std::hex << ace.grfAccessPermissions << std::dec;
+
+#define OUT_MASK(x) \
+    if (ace.grfAccessPermissions & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+    // Generic rights
+    OUT_MASK(GENERIC_READ);
+    OUT_MASK(GENERIC_WRITE);
+    OUT_MASK(GENERIC_EXECUTE);
+    OUT_MASK(GENERIC_ALL);
+    OUT_MASK(MAXIMUM_ALLOWED);
+    OUT_MASK(ACCESS_SYSTEM_SECURITY);
+    // Standard rights
+    OUT_MASK(SYNCHRONIZE);
+    OUT_MASK(WRITE_OWNER);
+    OUT_MASK(WRITE_DAC);
+    OUT_MASK(READ_CONTROL);
+    OUT_MASK(DELETE);
+
+    OUT_MASK(FILE_WRITE_ATTRIBUTES);
+    OUT_MASK(FILE_READ_ATTRIBUTES);
+    OUT_MASK(FILE_DELETE_CHILD);
+    OUT_MASK(FILE_EXECUTE);
+    // OUT_MASK(FILE_TRAVERSE);
+    OUT_MASK(FILE_WRITE_EA);
+    OUT_MASK(FILE_READ_EA);
+    OUT_MASK(FILE_APPEND_DATA);
+    // OUT_MASK(FILE_ADD_SUBDIRECTORY);
+    // OUT_MASK(FILE_CREATE_PIPE_INSTANCE);
+    OUT_MASK(FILE_WRITE_DATA);
+    // OUT_MASK(FILE_ADD_FILE);
+    OUT_MASK(FILE_READ_DATA);
+    // OUT_MASK(FILE_LIST_DIRECTORY);
+
+#undef OUT_MASK
+
+    oss << L"][Mode:" << ace.grfAccessMode;
+
+#define OUT_MODE(x) \
+    if (ace.grfAccessMode == (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+    OUT_MODE(NOT_USED_ACCESS);
+    OUT_MODE(GRANT_ACCESS);
+    OUT_MODE(SET_ACCESS);
+    OUT_MODE(DENY_ACCESS);
+    OUT_MODE(REVOKE_ACCESS);
+    OUT_MODE(SET_AUDIT_SUCCESS);
+    OUT_MODE(SET_AUDIT_FAILURE);
+
+#undef OUT_MODE
+
+    oss << L"][Inheritance:0x" << std::hex << ace.grfInheritance << std::dec;
+
+#define OUT_INHERITANCE(x) \
+    if (ace.grfInheritance & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+    OUT_INHERITANCE(INHERITED_ACE);
+    OUT_INHERITANCE(INHERIT_ONLY_ACE);
+    OUT_INHERITANCE(NO_PROPAGATE_INHERIT_ACE);
+    OUT_INHERITANCE(CONTAINER_INHERIT_ACE);
+    OUT_INHERITANCE(OBJECT_INHERIT_ACE);
+
+#undef OUT_INHERITANCE
+
+    oss << L"]";
+    aceStr = oss.str();
+    return error;
+}
+
 class SecurityDescriptor
 {
 private:
@@ -744,8 +828,15 @@ public:
             std::wcout << L" Dacl: 0x" << std::hex << dacl << L"[" << _pDacl << L"]" << std::dec << std::endl;
             std::wcout << L" DaclDefaulted: " << daclDefaulted << std::endl;
             Acl daclObj(dacl);
-            std::wcout << L"  Dacl ACEs Count: " << daclObj.AcesCount() << std::endl;
-            std::wcout << L"  Dacl ACEs: 0x" << std::hex << daclObj.Aces() << std::dec << std::endl;
+            ULONG acesCount = daclObj.AcesCount();
+            std::wcout << L"  Dacl ACEs Count: " << acesCount << std::endl;
+            PEXPLICIT_ACCESS_W aces = daclObj.Aces();
+            for (ULONG i = 0; i < acesCount; i++)
+            {
+                std::wstring aceStr;
+                AceString(aces[i], aceStr);
+                std::wcout << L"  Dacl ACE[" << i << L"]:" << aceStr << std::endl;
+            }
         }
 
         if (saclPresent)

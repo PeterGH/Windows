@@ -606,7 +606,123 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 
 #undef OUT_INHERITANCE
 
-    oss << L"]";
+    oss << L"][Trustee:";
+    oss << L"[pMultipleTrustee:0x" << std::hex << ace.Trustee.pMultipleTrustee << std::dec << L"] ";
+    oss << L"[MultipleTrusteeOperation:" << ace.Trustee.MultipleTrusteeOperation << L"|";
+    switch (ace.Trustee.MultipleTrusteeOperation)
+    {
+    case NO_MULTIPLE_TRUSTEE:
+        oss << L"NO_MULTIPLE_TRUSTEE";
+        break;
+    case TRUSTEE_IS_IMPERSONATE:
+        oss << L"TRUSTEE_IS_IMPERSONATE";
+        break;
+    default:
+        oss << L"Unknown";
+        break;
+    }
+    oss << L"][TrusteeForm:" << ace.Trustee.TrusteeForm << L"|";
+    switch (ace.Trustee.TrusteeForm)
+    {
+    case TRUSTEE_IS_SID:
+        oss << L"TRUSTEE_IS_SID";
+        break;
+    case TRUSTEE_IS_NAME:
+        oss << L"TRUSTEE_IS_NAME";
+        break;
+    case TRUSTEE_BAD_FORM:
+        oss << L"TRUSTEE_BAD_FORM"; 
+        break;
+    case TRUSTEE_IS_OBJECTS_AND_SID:
+        oss << L"TRUSTEE_IS_OBJECTS_AND_SID"; 
+        break;
+    case TRUSTEE_IS_OBJECTS_AND_NAME:
+        oss << L"TRUSTEE_IS_OBJECTS_AND_NAME"; 
+        break;
+    default:
+        oss << L"Unknown";
+        break;
+    }
+    oss << L"][TrusteeType:" << ace.Trustee.TrusteeType << L"|";
+    switch (ace.Trustee.TrusteeType)
+    {
+    case TRUSTEE_IS_UNKNOWN:
+        oss << L"TRUSTEE_IS_UNKNOWN";
+        break;
+    case TRUSTEE_IS_USER:
+        oss << L"TRUSTEE_IS_USER";
+        break;
+    case TRUSTEE_IS_GROUP:
+        oss << L"TRUSTEE_IS_GROUP";
+        break;
+    case TRUSTEE_IS_DOMAIN:
+        oss << L"TRUSTEE_IS_DOMAIN";
+        break;
+    case TRUSTEE_IS_ALIAS:
+        oss << L"TRUSTEE_IS_ALIAS";
+        break;
+    case TRUSTEE_IS_WELL_KNOWN_GROUP:
+        oss << L"TRUSTEE_IS_WELL_KNOWN_GROUP";
+        break;
+    case TRUSTEE_IS_DELETED:
+        oss << L"TRUSTEE_IS_DELETED";
+        break;
+    case TRUSTEE_IS_INVALID:
+        oss << L"TRUSTEE_IS_INVALID";
+        break;
+    case TRUSTEE_IS_COMPUTER:
+        oss << L"TRUSTEE_IS_COMPUTER";
+        break;
+    default:
+        oss << L"Unknown";
+        break;
+    }
+    oss << L"][";
+    switch (ace.Trustee.TrusteeForm)
+    {
+    case TRUSTEE_IS_SID:
+        {
+            Sid sid(static_cast<PSID>(ace.Trustee.ptstrName));
+            oss << L"SID:" << sid.Str();
+        }
+        break;
+    case TRUSTEE_IS_NAME:
+        {
+            std::wstring name(ace.Trustee.ptstrName);
+            oss << L"NAME:" << name;
+        }
+        break;
+    case TRUSTEE_IS_OBJECTS_AND_SID:
+        {
+            POBJECTS_AND_SID pos = static_cast<POBJECTS_AND_SID>(static_cast<PVOID>(ace.Trustee.ptstrName));
+            oss << L"OBJECTS_AND_SID:";
+            oss << L"[ObjectsPresent:" << pos->ObjectsPresent << L"|";
+            switch (pos->ObjectsPresent)
+            {
+            case ACE_OBJECT_TYPE_PRESENT:
+                oss << L"ACE_OBJECT_TYPE_PRESENT";
+                break;
+            case ACE_INHERITED_OBJECT_TYPE_PRESENT:
+                oss << L"ACE_INHERITED_OBJECT_TYPE_PRESENT";
+                break;
+            default:
+                oss << L"Unknown";
+                break;
+            }
+            oss << L"]";
+        }
+        break;
+    case TRUSTEE_IS_OBJECTS_AND_NAME:
+        oss << L"TRUSTEE_IS_OBJECTS_AND_NAME";
+        break;
+    case TRUSTEE_BAD_FORM:
+        oss << L"TRUSTEE_BAD_FORM";
+        break;
+    default:
+        oss << L"Unknown";
+        break;
+    }
+    oss << L"]]";
     aceStr = oss.str();
     return error;
 }

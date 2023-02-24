@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <AclAPI.h>
 #include <sddl.h>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -528,6 +529,17 @@ public:
     }
 };
 
+std::wstring GuidToString(const GUID& guid)
+{
+    std::wostringstream oss;
+    oss << std::hex << std::setfill(L'0') << std::setw(8) << guid.Data1
+        << L"-" << std::setw(4) << guid.Data2
+        << L"-" << std::setw(4) << guid.Data3
+        << L"-" << std::setw(2) << guid.Data4[0] << guid.Data4[1]
+        << L"-" << std::setw(2) << guid.Data4[2] << guid.Data4[3] << guid.Data4[4] << guid.Data4[5] << guid.Data4[6] << guid.Data4[7];
+    return oss.str();
+}
+
 DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 {
     DWORD error = ERROR_SUCCESS;
@@ -696,23 +708,43 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         {
             POBJECTS_AND_SID pos = static_cast<POBJECTS_AND_SID>(static_cast<PVOID>(ace.Trustee.ptstrName));
             oss << L"OBJECTS_AND_SID:";
-            oss << L"[ObjectsPresent:" << pos->ObjectsPresent << L"|";
-            switch (pos->ObjectsPresent)
-            {
-            case ACE_OBJECT_TYPE_PRESENT:
-                oss << L"ACE_OBJECT_TYPE_PRESENT";
-                break;
-            case ACE_INHERITED_OBJECT_TYPE_PRESENT:
-                oss << L"ACE_INHERITED_OBJECT_TYPE_PRESENT";
-                break;
-            default:
-                oss << L"Unknown";
-                break;
-            }
-            oss << L"]";
+            oss << L"[ObjectsPresent:" << pos->ObjectsPresent;
+
+#define OUT_OBJECTSPRESENT(x) \
+    if (pos->ObjectsPresent & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+            OUT_OBJECTSPRESENT(ACE_OBJECT_TYPE_PRESENT);
+            OUT_OBJECTSPRESENT(ACE_INHERITED_OBJECT_TYPE_PRESENT);
+
+#undef OUT_OBJECTSPRESENT
+
+            oss << L"][ObjectTypeGuid:" << GuidToString(pos->ObjectTypeGuid);
+            oss << L"][InheritedObjectTypeGuid:" << GuidToString(pos->InheritedObjectTypeGuid);
+            Sid sid(pos->pSid);
+            oss << L"[Sid:" << sid.Str() << L"]";
         }
         break;
     case TRUSTEE_IS_OBJECTS_AND_NAME:
+        {
+            POBJECTS_AND_NAME_W pon = static_cast<POBJECTS_AND_NAME_W>(static_cast<PVOID>(ace.Trustee.ptstrName));
+            oss << L"OBJECTS_AND_NAME:";
+            oss << L"[ObjectsPresent:" << pon->ObjectsPresent;
+
+#define OUT_OBJECTSPRESENT(x) \
+    if (pon->ObjectsPresent & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+            OUT_OBJECTSPRESENT(ACE_OBJECT_TYPE_PRESENT);
+            OUT_OBJECTSPRESENT(ACE_INHERITED_OBJECT_TYPE_PRESENT);
+
+#undef OUT_OBJECTSPRESENT
+
+        }
         oss << L"TRUSTEE_IS_OBJECTS_AND_NAME";
         break;
     case TRUSTEE_BAD_FORM:

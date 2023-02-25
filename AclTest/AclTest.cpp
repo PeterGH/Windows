@@ -584,7 +584,9 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 
 #undef OUT_MASK
 
-    oss << L"][Mode:" << ace.grfAccessMode;
+    oss << L"]";
+    
+    oss << L"[Mode:" << ace.grfAccessMode;
 
 #define OUT_MODE(x) \
     if (ace.grfAccessMode == (x)) \
@@ -602,7 +604,9 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 
 #undef OUT_MODE
 
-    oss << L"][Inheritance:0x" << std::hex << ace.grfInheritance << std::dec;
+    oss << L"]";
+    
+    oss << L"[Inheritance:0x" << std::hex << ace.grfInheritance << std::dec;
 
 #define OUT_INHERITANCE(x) \
     if (ace.grfInheritance & (x)) \
@@ -618,8 +622,13 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 
 #undef OUT_INHERITANCE
 
-    oss << L"][Trustee:";
-    oss << L"[pMultipleTrustee:0x" << std::hex << ace.Trustee.pMultipleTrustee << std::dec << L"] ";
+    oss << L"]";
+    
+    oss << L"[Trustee:";
+
+    oss << L"[pMultipleTrustee:0x" << std::hex << ace.Trustee.pMultipleTrustee << std::dec;
+    oss << L"]";
+    
     oss << L"[MultipleTrusteeOperation:" << ace.Trustee.MultipleTrusteeOperation << L"|";
     switch (ace.Trustee.MultipleTrusteeOperation)
     {
@@ -633,7 +642,9 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         oss << L"Unknown";
         break;
     }
-    oss << L"][TrusteeForm:" << ace.Trustee.TrusteeForm << L"|";
+    oss << L"]";
+    
+    oss << L"[TrusteeForm:" << ace.Trustee.TrusteeForm << L"|";
     switch (ace.Trustee.TrusteeForm)
     {
     case TRUSTEE_IS_SID:
@@ -655,7 +666,9 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         oss << L"Unknown";
         break;
     }
-    oss << L"][TrusteeType:" << ace.Trustee.TrusteeType << L"|";
+    oss << L"]";
+    
+    oss << L"[TrusteeType:" << ace.Trustee.TrusteeType << L"|";
     switch (ace.Trustee.TrusteeType)
     {
     case TRUSTEE_IS_UNKNOWN:
@@ -689,7 +702,9 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         oss << L"Unknown";
         break;
     }
-    oss << L"][";
+    oss << L"]";
+    
+    oss << L"[";
     switch (ace.Trustee.TrusteeForm)
     {
     case TRUSTEE_IS_SID:
@@ -744,8 +759,58 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 
 #undef OUT_OBJECTSPRESENT
 
+            oss << L"][ObjectTypeName:" << (pon->ObjectTypeName == nullptr ? L"NULL" : std::wstring(pon->ObjectTypeName));
+            oss << L"][InheritedObjectTypeName:" << (pon->InheritedObjectTypeName == nullptr ? L"NULL" : std::wstring(pon->InheritedObjectTypeName));
+            oss << L"][ObjectType:";
+            switch (pon->ObjectType)
+            {
+            case SE_UNKNOWN_OBJECT_TYPE:
+                oss << L"SE_UNKNOWN_OBJECT_TYPE";
+                break;
+            case SE_FILE_OBJECT:
+                oss << L"SE_FILE_OBJECT";
+                break;
+            case SE_SERVICE:
+                oss << L"SE_SERVICE";
+                break;
+            case SE_PRINTER:
+                oss << L"SE_PRINTER";
+                break;
+            case SE_REGISTRY_KEY:
+                oss << L"SE_REGISTRY_KEY";
+                break;
+            case SE_LMSHARE:
+                oss << L"SE_LMSHARE";
+                break;
+            case SE_KERNEL_OBJECT:
+                oss << L"SE_KERNEL_OBJECT";
+                break;
+            case SE_WINDOW_OBJECT:
+                oss << L"SE_WINDOW_OBJECT";
+                break;
+            case SE_DS_OBJECT:
+                oss << L"SE_DS_OBJECT";
+                break;
+            case SE_DS_OBJECT_ALL:
+                oss << L"SE_DS_OBJECT_ALL";
+                break;
+            case SE_PROVIDER_DEFINED_OBJECT:
+                oss << L"SE_PROVIDER_DEFINED_OBJECT";
+                break;
+            case SE_WMIGUID_OBJECT:
+                oss << L"SE_WMIGUID_OBJECT";
+                break;
+            case SE_REGISTRY_WOW64_32KEY:
+                oss << L"SE_REGISTRY_WOW64_32KEY";
+                break;
+            case SE_REGISTRY_WOW64_64KEY:
+                oss << L"SE_REGISTRY_WOW64_64KEY";
+                break;
+            default:
+                break;
+            }
+            oss << L"][Name:" << (pon->ptstrName == nullptr ? L"NULL" : std::wstring(pon->ptstrName)) << L"]";
         }
-        oss << L"TRUSTEE_IS_OBJECTS_AND_NAME";
         break;
     case TRUSTEE_BAD_FORM:
         oss << L"TRUSTEE_BAD_FORM";
@@ -973,27 +1038,27 @@ public:
 
         if (daclPresent)
         {
-            std::wcout << L" Dacl: 0x" << std::hex << dacl << L"[" << _pDacl << L"]" << std::dec << std::endl;
-            std::wcout << L" DaclDefaulted: " << daclDefaulted << std::endl;
+            std::wcout << L"  Dacl: 0x" << std::hex << dacl << L"[" << _pDacl << L"]" << std::dec << std::endl;
+            std::wcout << L"    DaclDefaulted: " << daclDefaulted << std::endl;
             Acl daclObj(dacl);
             ULONG acesCount = daclObj.AcesCount();
-            std::wcout << L"  Dacl ACEs Count: " << acesCount << std::endl;
+            std::wcout << L"    Dacl ACEs Count: " << acesCount << std::endl;
             PEXPLICIT_ACCESS_W aces = daclObj.Aces();
             for (ULONG i = 0; i < acesCount; i++)
             {
                 std::wstring aceStr;
                 AceString(aces[i], aceStr);
-                std::wcout << L"  Dacl ACE[" << i << L"]:" << aceStr << std::endl;
+                std::wcout << L"    Dacl ACE[" << i << L"]:" << aceStr << std::endl;
             }
         }
 
         if (saclPresent)
         {
-            std::wcout << L" Sacl: 0x" << std::hex << sacl << L"[" << _pSacl << L"]" << std::dec << std::endl;
-            std::wcout << L" SaclDefaulted: " << saclDefaulted << std::endl;
+            std::wcout << L"  Sacl: 0x" << std::hex << sacl << L"[" << _pSacl << L"]" << std::dec << std::endl;
+            std::wcout << L"    SaclDefaulted: " << saclDefaulted << std::endl;
             Acl saclObj(sacl);
-            std::wcout << L"  Sacl ACEs Count: " << saclObj.AcesCount() << std::endl;
-            std::wcout << L"  Sacl ACEs: 0x" << std::hex << saclObj.Aces() << std::dec << std::endl;
+            std::wcout << L"    Sacl ACEs Count: " << saclObj.AcesCount() << std::endl;
+            std::wcout << L"    Sacl ACEs: 0x" << std::hex << saclObj.Aces() << std::dec << std::endl;
         }
 
         return error;
@@ -1031,8 +1096,15 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
         | DACL_SECURITY_INFORMATION
         | SACL_SECURITY_INFORMATION
         | LABEL_SECURITY_INFORMATION
+        | ATTRIBUTE_SECURITY_INFORMATION
         | SCOPE_SECURITY_INFORMATION
-        | BACKUP_SECURITY_INFORMATION;
+        | PROCESS_TRUST_LABEL_SECURITY_INFORMATION
+        | ACCESS_FILTER_SECURITY_INFORMATION
+        | BACKUP_SECURITY_INFORMATION
+        | PROTECTED_DACL_SECURITY_INFORMATION
+        | PROTECTED_SACL_SECURITY_INFORMATION
+        | UNPROTECTED_DACL_SECURITY_INFORMATION
+        | UNPROTECTED_SACL_SECURITY_INFORMATION;
 
     error = GetSecurityInfo(
         fileHandle.Get(),

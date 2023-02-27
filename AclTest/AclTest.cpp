@@ -1001,6 +1001,143 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
     return error;
 }
 
+DWORD GetSecurityDescriptorInfo(
+    const PSECURITY_DESCRIPTOR securityDescriptor,
+    LPDWORD length,
+    LPDWORD revision,
+    PSECURITY_DESCRIPTOR_CONTROL control,
+    PSID *owner,
+    LPBOOL ownerDefaulted,
+    PSID *group,
+    LPBOOL groupDefaulted,
+    PACL *dacl,
+    LPBOOL daclPresent,
+    LPBOOL daclDefaulted,
+    PACL *sacl,
+    LPBOOL saclPresent,
+    LPBOOL saclDefaulted)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD localRevision;
+    SECURITY_DESCRIPTOR_CONTROL localControl;
+    BOOL localPresent;
+    BOOL localDefaulted;
+
+    if (securityDescriptor == nullptr || !IsValidSecurityDescriptor(securityDescriptor))
+    {
+        return ERROR_INVALID_SECURITY_DESCR;
+    }
+
+    if (length != nullptr)
+    {
+        *length = GetSecurityDescriptorLength(_pSecurityDescriptor);
+    }
+
+    if (revision != nullptr || control != nullptr)
+    {
+        if (revision == nullptr)
+        {
+            revision = &localRevision;
+        }
+
+        if (control == nullptr)
+        {
+            control = &localControl;
+        }
+
+        if (!GetSecurityDescriptorControl(
+            securityDescriptor,
+            control,
+            revision))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+    }
+
+    if (owner != nullptr)
+    {
+        if (ownerDefaulted == nullptr)
+        {
+            ownerDefaulted = &localDefaulted;
+        }
+
+        if (!GetSecurityDescriptorOwner(
+            securityDescriptor,
+            owner,
+            ownerDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+    }
+
+    if (group != nullptr)
+    {
+        if (groupDefaulted == nullptr)
+        {
+            groupDefaulted = &localDefaulted;
+        }
+
+        if (!GetSecurityDescriptorGroup(
+            securityDescriptor,
+            group,
+            groupDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+    }
+
+    if (dacl != nullptr)
+    {
+        if (daclPresent == nullptr)
+        {
+            daclPresent = &localPresent;
+        }
+
+        if (daclDefaulted == nullptr)
+        {
+            daclDefaulted = &localDefaulted;
+        }
+
+        if (!GetSecurityDescriptorDacl(
+            securityDescriptor,
+            daclPresent,
+            dacl,
+            daclDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+    }
+
+    if (sacl != nullptr)
+    {
+        if (saclPresent == nullptr)
+        {
+            saclPresent = &localPresent;
+        }
+
+        if (saclDefaulted == nullptr)
+        {
+            saclDefaulted = &localDefaulted;
+        }
+
+        if (!GetSecurityDescriptorSacl(
+            securityDescriptor,
+            saclPresent,
+            sacl,
+            saclDefaulted))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+    }
+
+    return error;
+}
+
 class SecurityDescriptor
 {
 private:
@@ -1059,6 +1196,29 @@ public:
         }
 
         return strSecurityDescriptor;
+    }
+
+    DWORD Set(const std::wstring& strSecurityDescriptor)
+    {
+        DWORD error = ERROR_SUCCESS;
+        ULONG size;
+
+        Free();
+
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            strSecurityDescriptor.c_str(),
+            SDDL_REVISION_1,
+            &_pSecurityDescriptor,
+            &size))
+        {
+            error = GetLastError();
+            std::wcerr << L"Failed to convert security descriptor " << strSecurityDescriptor << L" to binary format, error=" << error << std::endl;
+            RETURN_FAILURE(error);
+        }
+
+        _pSecurityDescriptor->
+
+        return error;
     }
 
     DWORD Free()
@@ -1321,9 +1481,22 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
     return error;
 }
 
+void Usage(int argc, wchar_t * argv[])
+{
+    std::wcout << L"Usage:" << std::endl;
+    std::wcout << argv[0] << L" file <file path>" << std::endl;
+    std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
+
+    if (argc < 3)
+    {
+        Usage(argc, argv);
+        return ERROR_BAD_ARGUMENTS;
+    }
 
     Impersonator impersonator;
     error = impersonator.BeginImpersonateSelf();
@@ -1332,11 +1505,21 @@ int wmain(int argc, wchar_t* argv[])
     error = SetPrivileges();
     RETURN_IF_FAILED(error);
 
-    if (argc > 1)
+    std::wstring command(argv[1]);
+
+    if (command == L"file")
     {
-        error = PrintFileSecurityDescriptor(argv[1]);
-        RETURN_IF_FAILED(error);
+        error = PrintFileSecurityDescriptor(argv[2]);
+    }
+    else if (command == L"sd")
+    {
+    }
+    else
+    {
+        Usage(argc, argv);
+        error = ERROR_BAD_ARGUMENTS;
     }
 
+    RETURN_IF_FAILED(error);
     return error;
 }

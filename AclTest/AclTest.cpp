@@ -1030,7 +1030,7 @@ DWORD GetSecurityDescriptorInfo(
 
     if (length != nullptr)
     {
-        *length = GetSecurityDescriptorLength(_pSecurityDescriptor);
+        *length = GetSecurityDescriptorLength(securityDescriptor);
     }
 
     if (revision != nullptr || control != nullptr)
@@ -1142,14 +1142,36 @@ class SecurityDescriptor
 {
 private:
     PSECURITY_DESCRIPTOR _pSecurityDescriptor;
+    DWORD _length;
+    DWORD _revision;
+    SECURITY_DESCRIPTOR_CONTROL _control;
     PSID _pOwner;
+    BOOL _ownerDefaulted;
     PSID _pGroup;
+    BOOL _groupDefaulted;
     PACL _pDacl;
+    BOOL _daclPresent;
+    BOOL _daclDefaulted;
     PACL _pSacl;
+    BOOL _saclPresent;
+    BOOL _saclDefaulted;
 
 public:
     SecurityDescriptor()
-        : _pSecurityDescriptor(NULL), _pOwner(NULL), _pGroup(NULL), _pDacl(NULL), _pSacl(NULL)
+        : _pSecurityDescriptor(nullptr),
+        _length(0),
+        _revision(SDDL_REVISION_1),
+        _control(0),
+        _pOwner(nullptr),
+        _ownerDefaulted(false),
+        _pGroup(nullptr),
+        _groupDefaulted(false),
+        _pDacl(nullptr),
+        _daclPresent(false),
+        _daclDefaulted(false),
+        _pSacl(nullptr),
+        _saclPresent(false),
+        _saclDefaulted(false)
     {}
 
     ~SecurityDescriptor()
@@ -1216,8 +1238,23 @@ public:
             RETURN_FAILURE(error);
         }
 
-        _pSecurityDescriptor->
+        error = GetSecurityDescriptorInfo(
+            _pSecurityDescriptor,
+            &_length,
+            &_revision,
+            &_control,
+            &_pOwner,
+            &_ownerDefaulted,
+            &_pGroup,
+            &_groupDefaulted,
+            &_pDacl,
+            &_daclPresent,
+            &_daclDefaulted,
+            &_pSacl,
+            &_saclPresent,
+            &_saclDefaulted);
 
+        RETURN_IF_FAILED(error);
         return error;
     }
 
@@ -1225,9 +1262,9 @@ public:
     {
         DWORD error = ERROR_SUCCESS;
 
-        if (_pSecurityDescriptor != NULL)
+        if (_pSecurityDescriptor != nullptr)
         {
-            if (LocalFree(_pSecurityDescriptor) != NULL)
+            if (LocalFree(_pSecurityDescriptor) != nullptr)
             {
                 error = GetLastError();
                 std::wcerr << L"Failed to free security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << std::endl;
@@ -1236,11 +1273,20 @@ public:
 
             std::wcout << L"Freed security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << std::endl;
 
-            _pSecurityDescriptor = NULL;
-            _pOwner = NULL;
-            _pGroup = NULL;
-            _pDacl = NULL;
-            _pSacl = NULL;
+            _pSecurityDescriptor = nullptr;
+            _length = 0;
+            _revision = SDDL_REVISION_1;
+            _control = 0;
+            _pOwner = nullptr;
+            _ownerDefaulted = false;
+            _pGroup = nullptr;
+            _groupDefaulted = false;
+            _pDacl = nullptr;
+            _daclPresent = false;
+            _daclDefaulted = false;
+            _pSacl = nullptr;
+            _saclPresent = false;
+            _saclDefaulted = false;
         }
 
         return error;
@@ -1249,89 +1295,36 @@ public:
     DWORD Print()
     {
         DWORD error = ERROR_SUCCESS;
-        DWORD length = 0;
-        DWORD revision = 0;
-        SECURITY_DESCRIPTOR_CONTROL control = { 0 };
-        PSID owner = NULL;
-        BOOL ownerDefaulted = FALSE;
-        PSID group = NULL;
-        BOOL groupDefaulted = FALSE;
-        PACL dacl = NULL;
-        BOOL daclPresent = FALSE;
-        BOOL daclDefaulted = FALSE;
-        PACL sacl = NULL;
-        BOOL saclPresent = FALSE;
-        BOOL saclDefaulted = FALSE;
         PBYTE pb;
         PWORD pw;
 
-        if (_pSecurityDescriptor == NULL)
-        {
-            return error;
-        }
-
-        if (IsValidSecurityDescriptor(_pSecurityDescriptor))
-        {
-            length = GetSecurityDescriptorLength(_pSecurityDescriptor);
-        }
-
-        if (!GetSecurityDescriptorControl(
+        error = GetSecurityDescriptorInfo(
             _pSecurityDescriptor,
-            &control,
-            &revision))
-        {
-            error = GetLastError();
-            RETURN_FAILURE(error);
-        }
-
-        if (!GetSecurityDescriptorOwner(
-            _pSecurityDescriptor,
-            &owner,
-            &ownerDefaulted))
-        {
-            error = GetLastError();
-            RETURN_FAILURE(error);
-        }
-
-        if (!GetSecurityDescriptorGroup(
-            _pSecurityDescriptor,
-            &group,
-            &groupDefaulted))
-        {
-            error = GetLastError();
-            RETURN_FAILURE(error);
-        }
-
-        if (!GetSecurityDescriptorDacl(
-            _pSecurityDescriptor,
-            &daclPresent,
-            &dacl,
-            &daclDefaulted))
-        {
-            error = GetLastError();
-            RETURN_FAILURE(error);
-        }
-
-        if (!GetSecurityDescriptorSacl(
-            _pSecurityDescriptor,
-            &saclPresent,
-            &sacl,
-            &saclDefaulted))
-        {
-            error = GetLastError();
-            RETURN_FAILURE(error);
-        }
+            &_length,
+            &_revision,
+            &_control,
+            &_pOwner,
+            &_ownerDefaulted,
+            &_pGroup,
+            &_groupDefaulted,
+            &_pDacl,
+            &_daclPresent,
+            &_daclDefaulted,
+            &_pSacl,
+            &_saclPresent,
+            &_saclDefaulted);
+        RETURN_IF_FAILED(error);
 
         pb = (PBYTE)_pSecurityDescriptor;
         std::wcout << L"SecurityDescriptor 0x" << std::hex << pb << std::dec << std::endl;
-        std::wcout << L"  Length: " << length << std::endl;
-        std::wcout << L"  Revision: " << revision << L"[" << pb[0] << L"]" << std::endl;
+        std::wcout << L"  Length: " << _length << std::endl;
+        std::wcout << L"  Revision: " << _revision << L"[" << pb[0] << L"]" << std::endl;
         std::wcout << L"  Sbz1: " << pb[1] << std::endl;
         pw = (PWORD)(pb + 2);
-        std::wcout << L"  Control: 0x" << std::hex << control << L"[" << *pw << L"]" << std::dec;
+        std::wcout << L"  Control: 0x" << std::hex << _control << L"[" << *pw << L"]" << std::dec;
 
 #define OUT_CONTROL(x) \
-        if (control & (x)) \
+        if (_control & (x)) \
         { \
             std::wcout << L"|" << #x; \
         }
@@ -1355,8 +1348,8 @@ public:
 
         std::wcout << std::endl;
 
-        std::wcout << L"  Owner: 0x" << std::hex << owner << L"[" << _pOwner << L"]" << std::dec;
-        Sid ownerSid(owner);
+        std::wcout << L"  Owner: [0x" << std::hex << _pOwner << L"]" << std::dec;
+        Sid ownerSid(_pOwner);
         std::wcout << ownerSid.Str();
 
         if (ownerSid.IsWellKnown())
@@ -1366,13 +1359,13 @@ public:
 
         std::wcout << std::endl;
 
-        if (owner != NULL)
+        if (_pOwner != nullptr)
         {
-            std::wcout << L"  OwnerDefaulted: " << ownerDefaulted << std::endl;
+            std::wcout << L"    OwnerDefaulted: " << _ownerDefaulted << std::endl;
         }
 
-        std::wcout << L"  Group: 0x" << std::hex << group << L"[" << _pGroup << L"]" << std::dec;
-        Sid groupSid(group);
+        std::wcout << L"  Group: [0x" << std::hex << _pGroup << L"]" << std::dec;
+        Sid groupSid(_pGroup);
         std::wcout << groupSid.Str();
 
         if (groupSid.IsWellKnown())
@@ -1382,16 +1375,16 @@ public:
 
         std::wcout << std::endl;
 
-        if (group != NULL)
+        if (_pGroup != nullptr)
         {
-            std::wcout << L"  GroupDefaulted: " << groupDefaulted << std::endl;
+            std::wcout << L"    GroupDefaulted: " << _groupDefaulted << std::endl;
         }
 
-        if (daclPresent)
+        if (_daclPresent)
         {
-            std::wcout << L"  Dacl: 0x" << std::hex << dacl << L"[" << _pDacl << L"]" << std::dec << std::endl;
-            std::wcout << L"    DaclDefaulted: " << daclDefaulted << std::endl;
-            Acl daclObj(dacl);
+            std::wcout << L"  Dacl: [0x" << std::hex << _pDacl << L"]" << std::dec << std::endl;
+            std::wcout << L"    DaclDefaulted: " << _daclDefaulted << std::endl;
+            Acl daclObj(_pDacl);
             ULONG acesCount = daclObj.AcesCount();
             std::wcout << L"    Dacl ACEs Count: " << acesCount << std::endl;
             PEXPLICIT_ACCESS_W aces = daclObj.Aces();
@@ -1403,11 +1396,11 @@ public:
             }
         }
 
-        if (saclPresent)
+        if (_saclPresent)
         {
-            std::wcout << L"  Sacl: 0x" << std::hex << sacl << L"[" << _pSacl << L"]" << std::dec << std::endl;
-            std::wcout << L"    SaclDefaulted: " << saclDefaulted << std::endl;
-            Acl saclObj(sacl);
+            std::wcout << L"  Sacl: [0x" << std::hex << _pSacl << L"]" << std::dec << std::endl;
+            std::wcout << L"    SaclDefaulted: " << _saclDefaulted << std::endl;
+            Acl saclObj(_pSacl);
             std::wcout << L"    Sacl ACEs Count: " << saclObj.AcesCount() << std::endl;
             std::wcout << L"    Sacl ACEs: 0x" << std::hex << saclObj.Aces() << std::dec << std::endl;
         }
@@ -1498,21 +1491,29 @@ int wmain(int argc, wchar_t* argv[])
         return ERROR_BAD_ARGUMENTS;
     }
 
-    Impersonator impersonator;
-    error = impersonator.BeginImpersonateSelf();
-    RETURN_IF_FAILED(error);
-
-    error = SetPrivileges();
-    RETURN_IF_FAILED(error);
-
     std::wstring command(argv[1]);
 
     if (command == L"file")
     {
+        Impersonator impersonator;
+        error = impersonator.BeginImpersonateSelf();
+        RETURN_IF_FAILED(error);
+
+        error = SetPrivileges();
+        RETURN_IF_FAILED(error);
+
         error = PrintFileSecurityDescriptor(argv[2]);
     }
     else if (command == L"sd")
     {
+        std::wstring securityDescriptorString(argv[2]);
+        std::wcout << L"Security descriptor is:\"" << securityDescriptorString << L"\"" << std::endl;
+
+        SecurityDescriptor securityDescriptor;
+        securityDescriptor.Set(securityDescriptorString);
+
+        std::wcout << L"Dump:" << std::endl;
+        securityDescriptor.Print();
     }
     else
     {

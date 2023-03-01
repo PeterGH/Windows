@@ -252,93 +252,16 @@ public:
     }
 };
 
-class ThreadToken
-{
-private:
-    HANDLE _tokenHandle;
-
-public:
-    ThreadToken()
-        : _tokenHandle(INVALID_HANDLE_VALUE)
-    {}
-
-    ~ThreadToken()
-    {
-        Close();
-    }
-
-    HANDLE Handle() { return _tokenHandle; }
-
-    DWORD Open()
-    {
-        DWORD error = ERROR_SUCCESS;
-        BOOL success;
-
-        if (_tokenHandle == INVALID_HANDLE_VALUE)
-        {
-            success = OpenThreadToken(
-                GetCurrentThread(),
-                TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY|TOKEN_IMPERSONATE,
-                TRUE,
-                &_tokenHandle);
-
-            if (success)
-            {
-                std::wcout << L"Opened thread token 0x" << std::hex << _tokenHandle << std::dec << std::endl;
-            }
-            else
-            {
-                error = GetLastError();
-                std::wcerr << L"Failed to open thread token." << std::endl;
-            }
-        }
-        else
-        {
-            std::wcout << L"Already opened thread token 0x" << std::hex << _tokenHandle << std::dec << std::endl;
-        }
-
-        return error;
-    }
-
-    DWORD Close()
-    {
-        DWORD error = ERROR_SUCCESS;
-        BOOL success;
-
-        if (_tokenHandle != INVALID_HANDLE_VALUE)
-        {
-            success = CloseHandle(_tokenHandle);
-
-            if (success)
-            {
-                std::wcout << L"Closed thread token 0x" << std::hex << _tokenHandle << std::dec << std::endl;
-                _tokenHandle = INVALID_HANDLE_VALUE;
-            }
-            else
-            {
-                error = GetLastError();
-                std::wcerr << L"Failed to close token handle 0x" << std::hex << _tokenHandle << std::dec << std::endl;
-            }
-        }
-        else
-        {
-            std::wcout << L"Already closed thread token." << std::endl;
-        }
-
-        return error;
-    }
-};
-
 class Handle
 {
-private:
+protected:
     HANDLE _handle;
 
 public:
     Handle(HANDLE handle) : _handle(handle) {}
     Handle() : Handle(INVALID_HANDLE_VALUE) {}
 
-    ~Handle()
+    virtual ~Handle()
     {
         Close();
     }
@@ -395,6 +318,67 @@ public:
     }
 };
 
+class ThreadToken : public Handle
+{
+public:
+    ThreadToken()
+        : Handle()
+    {}
+
+    DWORD Open()
+    {
+        DWORD error = ERROR_SUCCESS;
+        BOOL success;
+
+        if (_handle == INVALID_HANDLE_VALUE)
+        {
+            success = OpenThreadToken(
+                GetCurrentThread(),
+                TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_IMPERSONATE | TOKEN_DUPLICATE,
+                TRUE,
+                &_handle);
+
+            if (success)
+            {
+                std::wcout << L"Opened thread token 0x" << std::hex << _handle << std::dec << std::endl;
+            }
+            else
+            {
+                error = GetLastError();
+                std::wcerr << L"Failed to open thread token." << std::endl;
+            }
+        }
+        else
+        {
+            std::wcout << L"Already opened thread token 0x" << std::hex << _handle << std::dec << std::endl;
+        }
+
+        return error;
+    }
+
+    DWORD Duplicate(PHANDLE duplicateTokenHandle)
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_handle == INVALID_HANDLE_VALUE)
+        {
+            error = Open();
+            RETURN_IF_FAILED(error);
+        }
+
+        if (!DuplicateToken(
+            _handle,
+            SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
+            duplicateTokenHandle))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
+        return error;
+    }
+};
+
 DWORD SetPrivileges()
 {
     DWORD error = ERROR_SUCCESS;
@@ -403,16 +387,16 @@ DWORD SetPrivileges()
     error = token.Open();
     RETURN_IF_FAILED(error);
 
-    error = SetPrivilege(token.Handle(), SE_BACKUP_NAME, true);
+    error = SetPrivilege(token.Get(), SE_BACKUP_NAME, true);
     RETURN_IF_FAILED(error);
 
-    error = SetPrivilege(token.Handle(), SE_RESTORE_NAME, true);
+    error = SetPrivilege(token.Get(), SE_RESTORE_NAME, true);
     RETURN_IF_FAILED(error);
         
-    error = SetPrivilege(token.Handle(), SE_SECURITY_NAME, true);
+    error = SetPrivilege(token.Get(), SE_SECURITY_NAME, true);
     RETURN_IF_FAILED(error);
         
-    // PrintTokenPrivileges(token.Handle());
+    PrintTokenPrivileges(token.Get());
 
     return error;
 }
@@ -1477,6 +1461,7 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
 void Usage(int argc, wchar_t * argv[])
 {
     std::wcout << L"Usage:" << std::endl;
+    std::wcout << argv[0] << L" token" << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
 }
@@ -1485,7 +1470,7 @@ int wmain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
 
-    if (argc < 3)
+    if (argc < 2)
     {
         Usage(argc, argv);
         return ERROR_BAD_ARGUMENTS;
@@ -1493,8 +1478,43 @@ int wmain(int argc, wchar_t* argv[])
 
     std::wstring command(argv[1]);
 
-    if (command == L"file")
+    if (command == L"token")
     {
+        Impersonator impersonator;
+        error = impersonator.BeginImpersonateSelf();
+        RETURN_IF_FAILED(error);
+
+        error = SetPrivileges();
+        RETURN_IF_FAILED(error);
+
+        ThreadToken threadToken;
+        Handle token;
+        HANDLE dupToken;
+
+        error = threadToken.Open();
+        RETURN_IF_FAILED(error);
+
+        std::wcout << L"Thread token privileges:" << std::endl;
+        PrintTokenPrivileges(threadToken.Get());
+
+        std::wcout << L"Duplicate thread token:" << std::endl;
+        error = threadToken.Duplicate(&dupToken);
+        RETURN_IF_FAILED(error);
+
+        token.Attach(dupToken);
+        dupToken = INVALID_HANDLE_VALUE;
+
+        std::wcout << L"Duplicate token privileges:" << std::endl;
+        PrintTokenPrivileges(token.Get());
+    }
+    else if (command == L"file")
+    {
+        if (argc < 3)
+        {
+            Usage(argc, argv);
+            return ERROR_BAD_ARGUMENTS;
+        }
+
         Impersonator impersonator;
         error = impersonator.BeginImpersonateSelf();
         RETURN_IF_FAILED(error);
@@ -1506,6 +1526,12 @@ int wmain(int argc, wchar_t* argv[])
     }
     else if (command == L"sd")
     {
+        if (argc < 3)
+        {
+            Usage(argc, argv);
+            return ERROR_BAD_ARGUMENTS;
+        }
+
         std::wstring securityDescriptorString(argv[2]);
         std::wcout << L"Security descriptor is:\"" << securityDescriptorString << L"\"" << std::endl;
 

@@ -65,7 +65,7 @@ DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
         return error;
     }
 
-    luidName.resize(length + 1);
+    luidName.resize(length);
 
     if (!LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t*>(luidName.c_str()), &length))
     {
@@ -134,7 +134,7 @@ DWORD PrintTokenPrivileges(HANDLE tokenHandle)
     return error;
 }
 
-DWORD SetPrivilege(HANDLE tokenHandle, const std::wstring& privilege, bool enable)
+DWORD SetTokenPrivilege(HANDLE tokenHandle, const std::wstring& privilege, bool enable)
 {
     DWORD error = ERROR_SUCCESS;
     LUID luid;
@@ -366,9 +366,13 @@ public:
             RETURN_IF_FAILED(error);
         }
 
-        if (!DuplicateToken(
+        // Cannot use DuplicateToken because its output token handle has only TOKEN_IMPERSONATE and TOKEN_QUERY access, so cannot adjust its privileges
+        if (!DuplicateTokenEx(
             _handle,
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_IMPERSONATE,
+            NULL,
             SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
+            TOKEN_TYPE::TokenImpersonation,
             duplicateTokenHandle))
         {
             error = GetLastError();
@@ -379,7 +383,24 @@ public:
     }
 };
 
-DWORD SetPrivileges()
+DWORD SetTokenPrivileges(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    error = SetTokenPrivilege(tokenHandle, SE_BACKUP_NAME, true);
+    RETURN_IF_FAILED(error);
+
+    error = SetTokenPrivilege(tokenHandle, SE_RESTORE_NAME, true);
+    RETURN_IF_FAILED(error);
+
+    error = SetTokenPrivilege(tokenHandle, SE_SECURITY_NAME, true);
+    RETURN_IF_FAILED(error);
+
+    PrintTokenPrivileges(tokenHandle);
+    return error;
+}
+
+DWORD SetThreadTokenPrivileges()
 {
     DWORD error = ERROR_SUCCESS;
     ThreadToken token;
@@ -387,16 +408,8 @@ DWORD SetPrivileges()
     error = token.Open();
     RETURN_IF_FAILED(error);
 
-    error = SetPrivilege(token.Get(), SE_BACKUP_NAME, true);
+    error = SetTokenPrivileges(token.Get());
     RETURN_IF_FAILED(error);
-
-    error = SetPrivilege(token.Get(), SE_RESTORE_NAME, true);
-    RETURN_IF_FAILED(error);
-        
-    error = SetPrivilege(token.Get(), SE_SECURITY_NAME, true);
-    RETURN_IF_FAILED(error);
-        
-    PrintTokenPrivileges(token.Get());
 
     return error;
 }
@@ -1484,28 +1497,24 @@ int wmain(int argc, wchar_t* argv[])
         error = impersonator.BeginImpersonateSelf();
         RETURN_IF_FAILED(error);
 
-        error = SetPrivileges();
-        RETURN_IF_FAILED(error);
-
         ThreadToken threadToken;
-        Handle token;
-        HANDLE dupToken;
+        ThreadToken duplicateToken;
 
         error = threadToken.Open();
         RETURN_IF_FAILED(error);
 
-        std::wcout << L"Thread token privileges:" << std::endl;
-        PrintTokenPrivileges(threadToken.Get());
-
-        std::wcout << L"Duplicate thread token:" << std::endl;
-        error = threadToken.Duplicate(&dupToken);
+        std::wcout << L"Duplicate thread token =======>" << std::endl;
+        error = threadToken.Duplicate(&duplicateToken.Get());
         RETURN_IF_FAILED(error);
 
-        token.Attach(dupToken);
-        dupToken = INVALID_HANDLE_VALUE;
+        error = SetTokenPrivileges(duplicateToken.Get());
+        RETURN_IF_FAILED(error);
 
-        std::wcout << L"Duplicate token privileges:" << std::endl;
-        PrintTokenPrivileges(token.Get());
+        std::wcout << L"Thread token privileges =======>" << std::endl;
+        PrintTokenPrivileges(threadToken.Get());
+
+        std::wcout << L"Duplicate token privileges =======>" << std::endl;
+        PrintTokenPrivileges(duplicateToken.Get());
     }
     else if (command == L"file")
     {
@@ -1519,7 +1528,7 @@ int wmain(int argc, wchar_t* argv[])
         error = impersonator.BeginImpersonateSelf();
         RETURN_IF_FAILED(error);
 
-        error = SetPrivileges();
+        error = SetThreadTokenPrivileges();
         RETURN_IF_FAILED(error);
 
         error = PrintFileSecurityDescriptor(argv[2]);

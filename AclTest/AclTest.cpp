@@ -414,6 +414,128 @@ DWORD SetThreadTokenPrivileges()
     return error;
 }
 
+#define CALL_FUNC_ON_WELL_KNOWN_SIDS(F) \
+F(WinNullSid); \
+F(WinWorldSid); \
+F(WinLocalSid); \
+F(WinCreatorOwnerSid); \
+F(WinCreatorGroupSid); \
+F(WinCreatorOwnerServerSid); \
+F(WinCreatorGroupServerSid); \
+F(WinNtAuthoritySid); \
+F(WinDialupSid); \
+F(WinNetworkSid); \
+F(WinBatchSid); \
+F(WinInteractiveSid); \
+F(WinServiceSid); \
+F(WinAnonymousSid); \
+F(WinProxySid); \
+F(WinEnterpriseControllersSid); \
+F(WinSelfSid); \
+F(WinAuthenticatedUserSid); \
+F(WinRestrictedCodeSid); \
+F(WinTerminalServerSid); \
+F(WinRemoteLogonIdSid); \
+F(WinLogonIdsSid); \
+F(WinLocalSystemSid); \
+F(WinLocalServiceSid); \
+F(WinNetworkServiceSid); \
+F(WinBuiltinDomainSid); \
+F(WinBuiltinAdministratorsSid); \
+F(WinBuiltinUsersSid); \
+F(WinBuiltinGuestsSid); \
+F(WinBuiltinPowerUsersSid); \
+F(WinBuiltinAccountOperatorsSid); \
+F(WinBuiltinSystemOperatorsSid); \
+F(WinBuiltinPrintOperatorsSid); \
+F(WinBuiltinBackupOperatorsSid); \
+F(WinBuiltinReplicatorSid); \
+F(WinBuiltinPreWindows2000CompatibleAccessSid); \
+F(WinBuiltinRemoteDesktopUsersSid); \
+F(WinBuiltinNetworkConfigurationOperatorsSid); \
+F(WinAccountAdministratorSid); \
+F(WinAccountGuestSid); \
+F(WinAccountKrbtgtSid); \
+F(WinAccountDomainAdminsSid); \
+F(WinAccountDomainUsersSid); \
+F(WinAccountDomainGuestsSid); \
+F(WinAccountComputersSid); \
+F(WinAccountControllersSid); \
+F(WinAccountCertAdminsSid); \
+F(WinAccountSchemaAdminsSid); \
+F(WinAccountEnterpriseAdminsSid); \
+F(WinAccountPolicyAdminsSid); \
+F(WinAccountRasAndIasServersSid); \
+F(WinNTLMAuthenticationSid); \
+F(WinDigestAuthenticationSid); \
+F(WinSChannelAuthenticationSid); \
+F(WinThisOrganizationSid); \
+F(WinOtherOrganizationSid); \
+F(WinBuiltinIncomingForestTrustBuildersSid); \
+F(WinBuiltinPerfMonitoringUsersSid); \
+F(WinBuiltinPerfLoggingUsersSid); \
+F(WinBuiltinAuthorizationAccessSid); \
+F(WinBuiltinTerminalServerLicenseServersSid); \
+F(WinBuiltinDCOMUsersSid); \
+F(WinBuiltinIUsersSid); \
+F(WinIUserSid); \
+F(WinBuiltinCryptoOperatorsSid); \
+F(WinUntrustedLabelSid); \
+F(WinLowLabelSid); \
+F(WinMediumLabelSid); \
+F(WinHighLabelSid); \
+F(WinSystemLabelSid); \
+F(WinWriteRestrictedCodeSid); \
+F(WinCreatorOwnerRightsSid); \
+F(WinCacheablePrincipalsGroupSid); \
+F(WinNonCacheablePrincipalsGroupSid); \
+F(WinEnterpriseReadonlyControllersSid); \
+F(WinAccountReadonlyControllersSid); \
+F(WinBuiltinEventLogReadersGroup); \
+F(WinNewEnterpriseReadonlyControllersSid); \
+F(WinBuiltinCertSvcDComAccessGroup); \
+F(WinMediumPlusLabelSid); \
+F(WinLocalLogonSid); \
+F(WinConsoleLogonSid); \
+F(WinThisOrganizationCertificateSid); \
+F(WinApplicationPackageAuthoritySid); \
+F(WinBuiltinAnyPackageSid); \
+F(WinCapabilityInternetClientSid); \
+F(WinCapabilityInternetClientServerSid); \
+F(WinCapabilityPrivateNetworkClientServerSid); \
+F(WinCapabilityPicturesLibrarySid); \
+F(WinCapabilityVideosLibrarySid); \
+F(WinCapabilityMusicLibrarySid); \
+F(WinCapabilityDocumentsLibrarySid); \
+F(WinCapabilitySharedUserCertificatesSid); \
+F(WinCapabilityEnterpriseAuthenticationSid); \
+F(WinCapabilityRemovableStorageSid); \
+F(WinBuiltinRDSRemoteAccessServersSid); \
+F(WinBuiltinRDSEndpointServersSid); \
+F(WinBuiltinRDSManagementServersSid); \
+F(WinUserModeDriversSid); \
+F(WinBuiltinHyperVAdminsSid); \
+F(WinAccountCloneableControllersSid); \
+F(WinBuiltinAccessControlAssistanceOperatorsSid); \
+F(WinBuiltinRemoteManagementUsersSid); \
+F(WinAuthenticationAuthorityAssertedSid); \
+F(WinAuthenticationServiceAssertedSid); \
+F(WinLocalAccountSid); \
+F(WinLocalAccountAndAdministratorSid); \
+F(WinAccountProtectedUsersSid); \
+F(WinCapabilityAppointmentsSid); \
+F(WinCapabilityContactsSid); \
+F(WinAccountDefaultSystemManagedSid); \
+F(WinBuiltinDefaultSystemManagedGroupSid); \
+F(WinBuiltinStorageReplicaAdminsSid); \
+F(WinAccountKeyAdminsSid); \
+F(WinAccountEnterpriseKeyAdminsSid); \
+F(WinAuthenticationKeyTrustSid); \
+F(WinAuthenticationKeyPropertyMFASid); \
+F(WinAuthenticationKeyPropertyAttestationSid); \
+F(WinAuthenticationFreshKeyAuthSid); \
+F(WinBuiltinDeviceOwnersSid);
+
 bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring &strType)
 {
 #define RETURN_IF_IS_WELL_KNOWN_TYPE(x) \
@@ -424,126 +546,7 @@ bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring
         return true; \
     }
 
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNullSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinWorldSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLocalSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCreatorOwnerSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCreatorGroupSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCreatorOwnerServerSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCreatorGroupServerSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNtAuthoritySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinDialupSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNetworkSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBatchSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinInteractiveSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinServiceSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAnonymousSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinProxySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinEnterpriseControllersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinSelfSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticatedUserSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinRestrictedCodeSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinTerminalServerSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinRemoteLogonIdSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLogonIdsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLocalSystemSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLocalServiceSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNetworkServiceSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinDomainSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinAdministratorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinGuestsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinPowerUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinAccountOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinSystemOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinPrintOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinBackupOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinReplicatorSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinPreWindows2000CompatibleAccessSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinRemoteDesktopUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinNetworkConfigurationOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountAdministratorSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountGuestSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountKrbtgtSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountDomainAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountDomainUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountDomainGuestsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountComputersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountControllersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountCertAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountSchemaAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountEnterpriseAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountPolicyAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountRasAndIasServersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNTLMAuthenticationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinDigestAuthenticationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinSChannelAuthenticationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinThisOrganizationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinOtherOrganizationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinIncomingForestTrustBuildersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinPerfMonitoringUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinPerfLoggingUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinAuthorizationAccessSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinTerminalServerLicenseServersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinDCOMUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinIUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinIUserSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinCryptoOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinUntrustedLabelSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLowLabelSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinMediumLabelSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinHighLabelSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinSystemLabelSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinWriteRestrictedCodeSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCreatorOwnerRightsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCacheablePrincipalsGroupSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNonCacheablePrincipalsGroupSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinEnterpriseReadonlyControllersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountReadonlyControllersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinEventLogReadersGroup);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinNewEnterpriseReadonlyControllersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinCertSvcDComAccessGroup);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinMediumPlusLabelSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLocalLogonSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinConsoleLogonSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinThisOrganizationCertificateSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinApplicationPackageAuthoritySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinAnyPackageSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityInternetClientSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityInternetClientServerSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityPrivateNetworkClientServerSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityPicturesLibrarySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityVideosLibrarySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityMusicLibrarySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityDocumentsLibrarySid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilitySharedUserCertificatesSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityEnterpriseAuthenticationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityRemovableStorageSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinRDSRemoteAccessServersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinRDSEndpointServersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinRDSManagementServersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinUserModeDriversSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinHyperVAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountCloneableControllersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinAccessControlAssistanceOperatorsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinRemoteManagementUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticationAuthorityAssertedSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticationServiceAssertedSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLocalAccountSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinLocalAccountAndAdministratorSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountProtectedUsersSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityAppointmentsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinCapabilityContactsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountDefaultSystemManagedSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinDefaultSystemManagedGroupSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinStorageReplicaAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountKeyAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAccountEnterpriseKeyAdminsSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticationKeyTrustSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticationKeyPropertyMFASid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticationKeyPropertyAttestationSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinAuthenticationFreshKeyAuthSid);
-    RETURN_IF_IS_WELL_KNOWN_TYPE(WinBuiltinDeviceOwnersSid);
+    CALL_FUNC_ON_WELL_KNOWN_SIDS(RETURN_IF_IS_WELL_KNOWN_TYPE);
 
 #undef RETURN_IF_IS_WELL_KNOWN_TYPE
 
@@ -554,6 +557,7 @@ class Sid
 {
 private:
     PSID _sid;
+    bool _ownSid;
     LPWSTR _str;
     WELL_KNOWN_SID_TYPE _type;
     std::wstring _strType;
@@ -570,18 +574,39 @@ private:
     }
 
 public:
-    Sid(PSID sid) : _sid(sid), _str(NULL), _type(WinNullSid), _typeChecked(false), _isWellKnown(false) {}
+    Sid(PSID sid, bool ownSid = false)
+        : _sid(sid), _ownSid(ownSid), _str(nullptr), _type(WinNullSid), _typeChecked(false), _isWellKnown(false)
+    {}
+
+    Sid() : Sid(nullptr) {}
 
     ~Sid()
     {
         Free();
     }
 
+    PSID& Get() { return _sid; }
+
+    void SetOwnSid(bool ownSid)
+    {
+        _ownSid = ownSid;
+    }
+
+    void Attach(PSID sid, bool ownSid = false)
+    {
+        if (_sid != sid)
+        {
+            Free();
+            _sid = sid;
+            _ownSid = ownSid;
+        }
+    }
+
     std::wstring Str()
     {
         DWORD error = ERROR_SUCCESS;
 
-        if (_str == NULL)
+        if (_str == nullptr)
         {
             if (!ConvertSidToStringSidW(_sid, &_str))
             {
@@ -615,20 +640,91 @@ public:
     {
         DWORD error = ERROR_SUCCESS;
 
-        if (_str != NULL)
+        if (_sid != nullptr && _ownSid)
         {
-            if (LocalFree(_str) != NULL)
+            delete[] _sid;
+            // if (FreeSid(_sid) != nullptr)
+            // {
+            //     error = GetLastError();
+            //     RETURN_FAILURE(error);
+            // }
+
+            _sid = nullptr;
+            _ownSid = false;
+        }
+
+        if (_str != nullptr)
+        {
+            if (LocalFree(_str) != nullptr)
             {
                 error = GetLastError();
                 RETURN_FAILURE(error);
             }
 
-            _str = NULL;
+            _str = nullptr;
         }
+
+        _type = WinNullSid;
+        _strType.clear();
+        _typeChecked = false;
+        _isWellKnown = false;
 
         return error;
     }
 };
+
+DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> psid;
+    DWORD size = 0;
+
+    if (CreateWellKnownSid(type, domainSid, nullptr, &size))
+    {
+        error = ERROR_BAD_ARGUMENTS;
+        RETURN_FAILURE(error);
+    }
+
+    psid.reset(new byte[size]);
+
+    if (!CreateWellKnownSid(type, domainSid, psid.get(), &size))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    sid.Attach(static_cast<PSID>(psid.get()), true);
+    psid.release();
+
+    return error;
+}
+
+DWORD PrintWellKnownSid(WELL_KNOWN_SID_TYPE type, PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    std::wcout << L"Print WellKnownSidType " << type << L":" << std::endl;
+    error = CreateWellKnownSid(type, sid, domainSid);
+    RETURN_IF_FAILED(error);
+
+    std::wcout << sid.Str() << L": IsWellKnown=" << sid.IsWellKnown() << L", Type=" << sid.WellKnownSidType() << L", " << sid.WellKnownSidTypeString() << std::endl;
+    return error;
+}
+
+DWORD PrintWellKnownSids(PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+
+#define PRINT_WELL_KNOWN_SID(x) \
+    PrintWellKnownSid(x, domainSid);
+
+    CALL_FUNC_ON_WELL_KNOWN_SIDS(PRINT_WELL_KNOWN_SID);
+
+#undef PRINT_WELL_KNOWN_SID
+
+    return error;
+}
 
 class Acl
 {
@@ -1477,6 +1573,8 @@ void Usage(int argc, wchar_t * argv[])
     std::wcout << argv[0] << L" token" << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
+    std::wcout << argv[0] << L" sid" << std::endl;
+    std::wcout << argv[0] << L" sid <sid>" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -1549,6 +1647,10 @@ int wmain(int argc, wchar_t* argv[])
 
         std::wcout << L"Dump:" << std::endl;
         securityDescriptor.Print();
+    }
+    else if (command == L"sid")
+    {
+        error = PrintWellKnownSids();
     }
     else
     {

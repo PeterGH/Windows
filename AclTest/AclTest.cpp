@@ -553,11 +553,18 @@ bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring
     return false;
 }
 
+enum DeleterType
+{
+    None = 0,
+    DeleteByteArray,
+    UseFreeSid
+};
+
 class Sid
 {
 private:
     PSID _sid;
-    bool _ownSid;
+    DeleterType _deleter;
     LPWSTR _str;
     WELL_KNOWN_SID_TYPE _type;
     std::wstring _strType;
@@ -574,8 +581,8 @@ private:
     }
 
 public:
-    Sid(PSID sid, bool ownSid = false)
-        : _sid(sid), _ownSid(ownSid), _str(nullptr), _type(WinNullSid), _typeChecked(false), _isWellKnown(false)
+    Sid(PSID sid, DeleterType deleter = DeleterType::None)
+        : _sid(sid), _deleter(deleter), _str(nullptr), _type(WinNullSid), _typeChecked(false), _isWellKnown(false)
     {}
 
     Sid() : Sid(nullptr) {}
@@ -587,18 +594,18 @@ public:
 
     PSID& Get() { return _sid; }
 
-    void SetOwnSid(bool ownSid)
+    void SetDeleterType(DeleterType deleter)
     {
-        _ownSid = ownSid;
+        _deleter = deleter;
     }
 
-    void Attach(PSID sid, bool ownSid = false)
+    void Attach(PSID sid, DeleterType deleter = DeleterType::None)
     {
         if (_sid != sid)
         {
             Free();
             _sid = sid;
-            _ownSid = ownSid;
+            _deleter = deleter;
         }
     }
 
@@ -640,17 +647,26 @@ public:
     {
         DWORD error = ERROR_SUCCESS;
 
-        if (_sid != nullptr && _ownSid)
+        if (_sid != nullptr)
         {
-            delete[] _sid;
-            // if (FreeSid(_sid) != nullptr)
-            // {
-            //     error = GetLastError();
-            //     RETURN_FAILURE(error);
-            // }
+            switch (_deleter)
+            {
+            case DeleterType::DeleteByteArray:
+                delete[] _sid;
+                break;
+            case DeleterType::UseFreeSid:
+                if (::FreeSid(_sid) != nullptr)
+                {
+                    error = GetLastError();
+                    RETURN_FAILURE(error);
+                }
+                break;
+            default:
+                break;
+            }
 
             _sid = nullptr;
-            _ownSid = false;
+            _deleter = DeleterType::None;
         }
 
         if (_str != nullptr)
@@ -693,7 +709,7 @@ DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nu
         RETURN_FAILURE(error);
     }
 
-    sid.Attach(static_cast<PSID>(psid.get()), true);
+    sid.Attach(static_cast<PSID>(psid.get()), DeleterType::DeleteByteArray);
     psid.release();
 
     return error;
@@ -704,7 +720,6 @@ DWORD PrintWellKnownSid(WELL_KNOWN_SID_TYPE type, PSID domainSid = nullptr)
     DWORD error = ERROR_SUCCESS;
     Sid sid;
 
-    std::wcout << L"Print WellKnownSidType " << type << L":" << std::endl;
     error = CreateWellKnownSid(type, sid, domainSid);
     RETURN_IF_FAILED(error);
 
@@ -722,6 +737,103 @@ DWORD PrintWellKnownSids(PSID domainSid = nullptr)
     CALL_FUNC_ON_WELL_KNOWN_SIDS(PRINT_WELL_KNOWN_SID);
 
 #undef PRINT_WELL_KNOWN_SID
+
+    return error;
+}
+
+DWORD CreateSid(
+    Sid& sid,
+    PSID_IDENTIFIER_AUTHORITY authority,
+    BYTE subAuthorityCount,
+    DWORD subAuthority0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    PSID psid = nullptr;
+
+    if (!AllocateAndInitializeSid(
+        authority,
+        subAuthorityCount,
+        subAuthority0,
+        subAuthority1,
+        subAuthority2,
+        subAuthority3,
+        subAuthority4,
+        subAuthority5,
+        subAuthority6,
+        subAuthority7,
+        &psid))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    sid.Attach(psid, DeleterType::UseFreeSid);
+    return error;
+}
+
+DWORD PrintSid(
+    PSID_IDENTIFIER_AUTHORITY authority,
+    BYTE subAuthorityCount,
+    DWORD subAuthority0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    error = CreateSid(
+        sid,
+        authority,
+        subAuthorityCount,
+        subAuthority0,
+        subAuthority1,
+        subAuthority2,
+        subAuthority3,
+        subAuthority4,
+        subAuthority5,
+        subAuthority6,
+        subAuthority7);
+    RETURN_IF_FAILED(error);
+
+    std::wcout << sid.Str() << L": IsWellKnown=" << sid.IsWellKnown();
+    if (sid.IsWellKnown())
+    {
+        std::wcout << L", Type=" << sid.WellKnownSidType() << L", " << sid.WellKnownSidTypeString();
+    }
+    
+    std::wcout << std::endl;
+    return error;
+}
+
+DWORD PrintSids()
+{
+    DWORD error = ERROR_SUCCESS;
+    SID_IDENTIFIER_AUTHORITY authority;
+
+    authority = SECURITY_NULL_SID_AUTHORITY;
+    PrintSid(&authority, 1, SECURITY_NULL_RID);
+    authority = SECURITY_WORLD_SID_AUTHORITY;
+    PrintSid(&authority, 1, SECURITY_NULL_RID);
+    authority = SECURITY_LOCAL_SID_AUTHORITY;
+    PrintSid(&authority, 1, SECURITY_NULL_RID);
+    authority = SECURITY_CREATOR_SID_AUTHORITY;
+    PrintSid(&authority, 1, SECURITY_NULL_RID);
+    authority = SECURITY_NON_UNIQUE_AUTHORITY;
+    PrintSid(&authority, 1, SECURITY_NULL_RID);
+    authority = SECURITY_RESOURCE_MANAGER_AUTHORITY;
+    PrintSid(&authority, 1, SECURITY_NULL_RID);
 
     return error;
 }
@@ -1574,6 +1686,8 @@ void Usage(int argc, wchar_t * argv[])
     std::wcout << argv[0] << L" file <file path>" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
     std::wcout << argv[0] << L" sid" << std::endl;
+    std::wcout << argv[0] << L" sid wellknown" << std::endl;
+    std::wcout << argv[0] << L" sid wellknown <type>" << std::endl;
     std::wcout << argv[0] << L" sid <sid>" << std::endl;
 }
 
@@ -1650,7 +1764,27 @@ int wmain(int argc, wchar_t* argv[])
     }
     else if (command == L"sid")
     {
-        error = PrintWellKnownSids();
+        if (argc == 2)
+        {
+            error = PrintSids();
+        }
+        else
+        {
+            command.assign(argv[2]);
+
+            if (command == L"wellknown")
+            {
+                if (argc == 3)
+                {
+                    error = PrintWellKnownSids();
+                }
+                else
+                {
+                    WELL_KNOWN_SID_TYPE type = static_cast<WELL_KNOWN_SID_TYPE>(_wtoi(argv[3]));
+                    error = PrintWellKnownSid(type);
+                }
+            }
+        }
     }
     else
     {

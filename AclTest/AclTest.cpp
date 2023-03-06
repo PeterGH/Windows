@@ -687,6 +687,16 @@ public:
 
         return error;
     }
+
+    void Print()
+    {
+        std::wcout << Str() << L"[IsWellKnown=" << IsWellKnown();
+        if (_isWellKnown)
+        {
+            std::wcout << L"|Type=" << _type << L"|" << _strType;
+        }
+        std::wcout << L"]" << std::endl;
+    }
 };
 
 DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nullptr)
@@ -715,35 +725,9 @@ DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nu
     return error;
 }
 
-DWORD PrintWellKnownSid(WELL_KNOWN_SID_TYPE type, PSID domainSid = nullptr)
-{
-    DWORD error = ERROR_SUCCESS;
-    Sid sid;
-
-    error = CreateWellKnownSid(type, sid, domainSid);
-    RETURN_IF_FAILED(error);
-
-    std::wcout << sid.Str() << L": IsWellKnown=" << sid.IsWellKnown() << L", Type=" << sid.WellKnownSidType() << L", " << sid.WellKnownSidTypeString() << std::endl;
-    return error;
-}
-
-DWORD PrintWellKnownSids(PSID domainSid = nullptr)
-{
-    DWORD error = ERROR_SUCCESS;
-
-#define PRINT_WELL_KNOWN_SID(x) \
-    PrintWellKnownSid(x, domainSid);
-
-    CALL_FUNC_ON_WELL_KNOWN_SIDS(PRINT_WELL_KNOWN_SID);
-
-#undef PRINT_WELL_KNOWN_SID
-
-    return error;
-}
-
 DWORD CreateSid(
     Sid& sid,
-    PSID_IDENTIFIER_AUTHORITY authority,
+    const SID_IDENTIFIER_AUTHORITY& authority,
     BYTE subAuthorityCount,
     DWORD subAuthority0,
     DWORD subAuthority1 = 0,
@@ -758,7 +742,7 @@ DWORD CreateSid(
     PSID psid = nullptr;
 
     if (!AllocateAndInitializeSid(
-        authority,
+        const_cast<PSID_IDENTIFIER_AUTHORITY>(&authority),
         subAuthorityCount,
         subAuthority0,
         subAuthority1,
@@ -778,8 +762,96 @@ DWORD CreateSid(
     return error;
 }
 
+DWORD CreateRandomSid(
+    Sid& sid,
+    const SID_IDENTIFIER_AUTHORITY& authority,
+    BYTE subAuthorityCount = 0,
+    DWORD subAuthority0 = 0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    BYTE count = 0;
+    const BYTE maxCount = 8;
+
+    if (subAuthorityCount == 0)
+    {
+        subAuthorityCount = rand() % maxCount;
+    }
+
+#define SET_SUB_AUTHORITY(x) \
+    if (count < subAuthorityCount) \
+    { \
+        if (x == 0) \
+        { \
+            x = rand(); \
+        } \
+        else \
+        { \
+            x = 0; \
+        } \
+    }
+
+    SET_SUB_AUTHORITY(subAuthority0);
+    SET_SUB_AUTHORITY(subAuthority1);
+    SET_SUB_AUTHORITY(subAuthority2);
+    SET_SUB_AUTHORITY(subAuthority3);
+    SET_SUB_AUTHORITY(subAuthority4);
+    SET_SUB_AUTHORITY(subAuthority5);
+    SET_SUB_AUTHORITY(subAuthority6);
+    SET_SUB_AUTHORITY(subAuthority7);
+
+#undef SET_SUB_AUTHORITY
+
+    error = CreateSid(
+        sid,
+        authority,
+        subAuthorityCount,
+        subAuthority0,
+        subAuthority1,
+        subAuthority2,
+        subAuthority3,
+        subAuthority4,
+        subAuthority5,
+        subAuthority6,
+        subAuthority7);
+    RETURN_IF_FAILED(error);
+    return error;
+}
+
+DWORD PrintWellKnownSid(WELL_KNOWN_SID_TYPE type, PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    error = CreateWellKnownSid(type, sid, domainSid);
+    RETURN_IF_FAILED(error);
+
+    sid.Print();
+    return error;
+}
+
+DWORD PrintWellKnownSids(PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+
+#define PRINT_WELL_KNOWN_SID(x) \
+    PrintWellKnownSid(x, domainSid);
+
+    CALL_FUNC_ON_WELL_KNOWN_SIDS(PRINT_WELL_KNOWN_SID);
+
+#undef PRINT_WELL_KNOWN_SID
+
+    return error;
+}
+
 DWORD PrintSid(
-    PSID_IDENTIFIER_AUTHORITY authority,
+    const SID_IDENTIFIER_AUTHORITY& authority,
     BYTE subAuthorityCount,
     DWORD subAuthority0,
     DWORD subAuthority1 = 0,
@@ -807,33 +879,27 @@ DWORD PrintSid(
         subAuthority7);
     RETURN_IF_FAILED(error);
 
-    std::wcout << sid.Str() << L": IsWellKnown=" << sid.IsWellKnown();
-    if (sid.IsWellKnown())
-    {
-        std::wcout << L", Type=" << sid.WellKnownSidType() << L", " << sid.WellKnownSidTypeString();
-    }
-    
-    std::wcout << std::endl;
+    sid.Print();
     return error;
 }
 
 DWORD PrintSids()
 {
     DWORD error = ERROR_SUCCESS;
-    SID_IDENTIFIER_AUTHORITY authority;
 
-    authority = SECURITY_NULL_SID_AUTHORITY;
-    PrintSid(&authority, 1, SECURITY_NULL_RID);
-    authority = SECURITY_WORLD_SID_AUTHORITY;
-    PrintSid(&authority, 1, SECURITY_NULL_RID);
-    authority = SECURITY_LOCAL_SID_AUTHORITY;
-    PrintSid(&authority, 1, SECURITY_NULL_RID);
-    authority = SECURITY_CREATOR_SID_AUTHORITY;
-    PrintSid(&authority, 1, SECURITY_NULL_RID);
-    authority = SECURITY_NON_UNIQUE_AUTHORITY;
-    PrintSid(&authority, 1, SECURITY_NULL_RID);
-    authority = SECURITY_RESOURCE_MANAGER_AUTHORITY;
-    PrintSid(&authority, 1, SECURITY_NULL_RID);
+    PrintSid(SECURITY_NULL_SID_AUTHORITY, 1, SECURITY_NULL_RID);
+    PrintSid(SECURITY_WORLD_SID_AUTHORITY, 1, SECURITY_NULL_RID);
+    PrintSid(SECURITY_LOCAL_SID_AUTHORITY, 1, SECURITY_NULL_RID);
+    PrintSid(SECURITY_CREATOR_SID_AUTHORITY, 1, SECURITY_NULL_RID);
+    PrintSid(SECURITY_NON_UNIQUE_AUTHORITY, 1, SECURITY_NULL_RID);
+    PrintSid(SECURITY_RESOURCE_MANAGER_AUTHORITY, 1, SECURITY_NULL_RID);
+
+    for (int i = 0; i < 20; i++)
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY);
+        sid.Print();
+    }
 
     return error;
 }

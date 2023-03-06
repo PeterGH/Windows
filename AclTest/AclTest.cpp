@@ -785,16 +785,16 @@ DWORD CreateRandomSid(
     }
 
 #define SET_SUB_AUTHORITY(x) \
-    if (count < subAuthorityCount) \
+    if (count++ < subAuthorityCount) \
     { \
         if (x == 0) \
         { \
             x = rand(); \
         } \
-        else \
-        { \
-            x = 0; \
-        } \
+    } \
+    else \
+    { \
+        x = 0; \
     }
 
     SET_SUB_AUTHORITY(subAuthority0);
@@ -893,6 +893,92 @@ DWORD PrintSids()
     PrintSid(SECURITY_CREATOR_SID_AUTHORITY, 1, SECURITY_NULL_RID);
     PrintSid(SECURITY_NON_UNIQUE_AUTHORITY, 1, SECURITY_NULL_RID);
     PrintSid(SECURITY_RESOURCE_MANAGER_AUTHORITY, 1, SECURITY_NULL_RID);
+
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 1, 1);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 1);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 2, 1, 2);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 2);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 3, 1, 2, 3);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 3);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 4, 1, 2, 3, 4);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 4);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 5, 1, 2, 3, 4, 5);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 5);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 6, 1, 2, 3, 4, 5, 6);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 6);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 7, 1, 2, 3, 4, 5, 6, 7);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 7);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8);
+        sid.Print();
+    }
+    {
+        Sid sid;
+        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 8);
+        sid.Print();
+    }
 
     for (int i = 0; i < 20; i++)
     {

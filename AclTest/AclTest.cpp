@@ -1831,6 +1831,63 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
     return error;
 }
 
+DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    sid.Attach(sa.Sid);
+    sid.Print();
+
+#define OUT_ATTRIBUTE(x) \
+    if (sa.Attributes & (x)) \
+    { \
+        std::wcout << L"|" << #x; \
+    }
+
+    OUT_ATTRIBUTE(SE_GROUP_LOGON_ID);
+    OUT_ATTRIBUTE(SE_GROUP_RESOURCE);
+    OUT_ATTRIBUTE(SE_GROUP_INTEGRITY_ENABLED);
+    OUT_ATTRIBUTE(SE_GROUP_INTEGRITY);
+    OUT_ATTRIBUTE(SE_GROUP_USE_FOR_DENY_ONLY);
+    OUT_ATTRIBUTE(SE_GROUP_OWNER);
+    OUT_ATTRIBUTE(SE_GROUP_ENABLED);
+    OUT_ATTRIBUTE(SE_GROUP_ENABLED_BY_DEFAULT);
+    OUT_ATTRIBUTE(SE_GROUP_MANDATORY);
+
+#undef OUT_ATTRIBUTE
+
+    std::wcout << std::endl;
+    return error;
+}
+
+DWORD PrintTokenUser(HANDLE tokenHandle)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> buffer;
+    PTOKEN_USER user;
+
+    error = GetTokenInformation(tokenHandle, TokenUser, buffer);
+
+    if (error == ERROR_SUCCESS)
+    {
+        user = (PTOKEN_USER)buffer.get();
+        std::wcout << L"TokenUser:" << std::endl;
+        PrintSidAndAttributes(user->User);
+    }
+    else
+    {
+        std::wcout << L"Failed to get TokenUser info, error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD SetTokenUser(HANDLE tokenHandle)
+{
+
+}
+
 void Usage(int argc, wchar_t * argv[])
 {
     std::wcout << L"Usage:" << std::endl;
@@ -1879,6 +1936,11 @@ int wmain(int argc, wchar_t* argv[])
 
         std::wcout << L"Duplicate token privileges =======>" << std::endl;
         PrintTokenPrivileges(duplicateToken.Get());
+
+        std::wcout << L"Thread token user =======>" << std::endl;
+        PrintTokenUser(threadToken.Get());
+        std::wcout << L"Duplicate token user =======>" << std::endl;
+        PrintTokenUser(duplicateToken.Get());
     }
     else if (command == L"file")
     {

@@ -1006,7 +1006,7 @@ DWORD SetSid(
     DWORD index = 0;
     PDWORD subAuthority = nullptr;
 
-    if (!InitializeSid(sid, &authority, subAuthorityCount))
+    if (!InitializeSid(sid, const_cast<PSID_IDENTIFIER_AUTHORITY>(&authority), subAuthorityCount))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
@@ -1035,7 +1035,7 @@ DWORD SetSid(
 }
 
 DWORD CreateSid(
-    std::unique_ptr<SID>& sid,
+    std::unique_ptr<byte[]>& sid,
     const SID_IDENTIFIER_AUTHORITY& authority,
     BYTE subAuthorityCount = 0,
     DWORD subAuthority0 = 0,
@@ -1051,7 +1051,7 @@ DWORD CreateSid(
     DWORD length = GetSidLengthRequired(subAuthorityCount);
     sid.reset(new byte[length]);
     error = SetSid(
-        sid.get(),
+        static_cast<PSID>(sid.get()),
         authority,
         subAuthorityCount,
         subAuthority0,
@@ -1079,7 +1079,7 @@ typedef struct _SidFields {
     DWORD subAuthority7;
 
     _SidFields()
-        authority(SECURITY_NT_AUTHORITY),
+        : authority(SECURITY_NT_AUTHORITY),
         subAuthorityCount(0),
         subAuthority0(0),
         subAuthority1(0),
@@ -1095,14 +1095,14 @@ typedef struct _SidFields {
 DWORD PrintSid(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
-    std::unique_ptr<SID> psid;
+    std::unique_ptr<byte[]> psid;
     Sid sid;
     SidFields sf;
     int index = 3;
     sf.subAuthorityCount = argc - index;
 
 #define SET_SUB_AUTHORITY(x) \
-    if (index < sf.subAuthorityCount) \
+    if (index < argc) \
     { \
         x = _wtoi(argv[index]); \
     } \
@@ -1133,7 +1133,7 @@ DWORD PrintSid(int argc, wchar_t* argv[])
         sf.subAuthority7);
     RETURN_IF_FAILED(error);
 
-    sid.Attach(psid.get());
+    sid.Attach(static_cast<PSID>(psid.get()));
     sid.Print();
     return error;
 }
@@ -2033,7 +2033,8 @@ DWORD PrintTokenUser(HANDLE tokenHandle)
 
 DWORD SetTokenUser(HANDLE tokenHandle)
 {
-
+    DWORD error = ERROR_SUCCESS;
+    return error;
 }
 
 void Usage(int argc, wchar_t * argv[])

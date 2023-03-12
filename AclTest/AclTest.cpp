@@ -22,7 +22,6 @@
         return e2; \
     }
 
-
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
     DWORD error = ERROR_SUCCESS;
@@ -990,6 +989,155 @@ DWORD PrintSids()
     return error;
 }
 
+DWORD SetSid(
+    PSID sid,
+    const SID_IDENTIFIER_AUTHORITY& authority,
+    BYTE subAuthorityCount = 0,
+    DWORD subAuthority0 = 0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD index = 0;
+    PDWORD subAuthority = nullptr;
+
+    if (!InitializeSid(sid, &authority, subAuthorityCount))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+#define SET_SUB_AUTHORITY(x) \
+    if (index < subAuthorityCount) \
+    { \
+        subAuthority = GetSidSubAuthority(sid, index); \
+        *subAuthority = x; \
+    } \
+    index++;
+
+    SET_SUB_AUTHORITY(subAuthority0);
+    SET_SUB_AUTHORITY(subAuthority1);
+    SET_SUB_AUTHORITY(subAuthority2);
+    SET_SUB_AUTHORITY(subAuthority3);
+    SET_SUB_AUTHORITY(subAuthority4);
+    SET_SUB_AUTHORITY(subAuthority5);
+    SET_SUB_AUTHORITY(subAuthority6);
+    SET_SUB_AUTHORITY(subAuthority7);
+
+#undef SET_SUB_AUTHORITY
+
+    return error;
+}
+
+DWORD CreateSid(
+    std::unique_ptr<SID>& sid,
+    const SID_IDENTIFIER_AUTHORITY& authority,
+    BYTE subAuthorityCount = 0,
+    DWORD subAuthority0 = 0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD length = GetSidLengthRequired(subAuthorityCount);
+    sid.reset(new byte[length]);
+    error = SetSid(
+        sid.get(),
+        authority,
+        subAuthorityCount,
+        subAuthority0,
+        subAuthority1,
+        subAuthority2,
+        subAuthority3,
+        subAuthority4,
+        subAuthority5,
+        subAuthority6,
+        subAuthority7);
+    RETURN_IF_FAILED(error);
+    return error;
+}
+
+typedef struct _SidFields {
+    SID_IDENTIFIER_AUTHORITY authority;
+    BYTE subAuthorityCount;
+    DWORD subAuthority0;
+    DWORD subAuthority1;
+    DWORD subAuthority2;
+    DWORD subAuthority3;
+    DWORD subAuthority4;
+    DWORD subAuthority5;
+    DWORD subAuthority6;
+    DWORD subAuthority7;
+
+    _SidFields()
+        authority(SECURITY_NT_AUTHORITY),
+        subAuthorityCount(0),
+        subAuthority0(0),
+        subAuthority1(0),
+        subAuthority2(0),
+        subAuthority3(0),
+        subAuthority4(0),
+        subAuthority5(0),
+        subAuthority6(0),
+        subAuthority7(0)
+    {}
+} SidFields, *PSidFields;
+
+DWORD PrintSid(int argc, wchar_t* argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<SID> psid;
+    Sid sid;
+    SidFields sf;
+    int index = 3;
+    sf.subAuthorityCount = argc - index;
+
+#define SET_SUB_AUTHORITY(x) \
+    if (index < sf.subAuthorityCount) \
+    { \
+        x = _wtoi(argv[index]); \
+    } \
+    index++;
+
+    SET_SUB_AUTHORITY(sf.subAuthority0);
+    SET_SUB_AUTHORITY(sf.subAuthority1);
+    SET_SUB_AUTHORITY(sf.subAuthority2);
+    SET_SUB_AUTHORITY(sf.subAuthority3);
+    SET_SUB_AUTHORITY(sf.subAuthority4);
+    SET_SUB_AUTHORITY(sf.subAuthority5);
+    SET_SUB_AUTHORITY(sf.subAuthority6);
+    SET_SUB_AUTHORITY(sf.subAuthority7);
+
+#undef SET_SUB_AUTHORITY
+
+    error = CreateSid(
+        psid,
+        sf.authority,
+        sf.subAuthorityCount,
+        sf.subAuthority0,
+        sf.subAuthority1,
+        sf.subAuthority2,
+        sf.subAuthority3,
+        sf.subAuthority4,
+        sf.subAuthority5,
+        sf.subAuthority6,
+        sf.subAuthority7);
+    RETURN_IF_FAILED(error);
+
+    sid.Attach(psid.get());
+    sid.Print();
+    return error;
+}
+
 class Acl
 {
 private:
@@ -1897,6 +2045,8 @@ void Usage(int argc, wchar_t * argv[])
     std::wcout << argv[0] << L" sid" << std::endl;
     std::wcout << argv[0] << L" sid wellknown" << std::endl;
     std::wcout << argv[0] << L" sid wellknown <type>" << std::endl;
+    std::wcout << argv[0] << L" sid aai|allocateandinitializesid" << std::endl;
+    std::wcout << argv[0] << L" sid create <subauthority0> <subauthority1> ..." << std::endl;
     std::wcout << argv[0] << L" sid <sid>" << std::endl;
 }
 
@@ -1997,6 +2147,14 @@ int wmain(int argc, wchar_t* argv[])
                     WELL_KNOWN_SID_TYPE type = static_cast<WELL_KNOWN_SID_TYPE>(_wtoi(argv[3]));
                     error = PrintWellKnownSid(type);
                 }
+            }
+            else if (command == L"aai" || command == L"allocateandinitializesid")
+            {
+                error = PrintSids();
+            }
+            else if (command == L"create")
+            {
+                error = PrintSid(argc, argv);
             }
         }
     }

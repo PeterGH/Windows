@@ -333,7 +333,7 @@ public:
         {
             success = OpenThreadToken(
                 GetCurrentThread(),
-                TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_IMPERSONATE | TOKEN_DUPLICATE,
+                TOKEN_ALL_ACCESS,
                 TRUE,
                 &_handle);
 
@@ -368,7 +368,7 @@ public:
         // Cannot use DuplicateToken because its output token handle has only TOKEN_IMPERSONATE and TOKEN_QUERY access, so cannot adjust its privileges
         if (!DuplicateTokenEx(
             _handle,
-            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_IMPERSONATE,
+            TOKEN_ALL_ACCESS,
             NULL,
             SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
             TOKEN_TYPE::TokenImpersonation,
@@ -1090,16 +1090,11 @@ typedef struct _SidFields {
         subAuthority6(0),
         subAuthority7(0)
     {}
-} SidFields, *PSidFields;
 
-DWORD PrintSid(int argc, wchar_t* argv[])
-{
-    DWORD error = ERROR_SUCCESS;
-    std::unique_ptr<byte[]> psid;
-    Sid sid;
-    SidFields sf;
-    int index = 3;
-    sf.subAuthorityCount = argc - index;
+    void Parse(int argc, wchar_t* argv[])
+    {
+        int index = 0;
+        subAuthorityCount = argc;
 
 #define SET_SUB_AUTHORITY(x) \
     if (index < argc) \
@@ -1108,16 +1103,27 @@ DWORD PrintSid(int argc, wchar_t* argv[])
     } \
     index++;
 
-    SET_SUB_AUTHORITY(sf.subAuthority0);
-    SET_SUB_AUTHORITY(sf.subAuthority1);
-    SET_SUB_AUTHORITY(sf.subAuthority2);
-    SET_SUB_AUTHORITY(sf.subAuthority3);
-    SET_SUB_AUTHORITY(sf.subAuthority4);
-    SET_SUB_AUTHORITY(sf.subAuthority5);
-    SET_SUB_AUTHORITY(sf.subAuthority6);
-    SET_SUB_AUTHORITY(sf.subAuthority7);
+        SET_SUB_AUTHORITY(subAuthority0);
+        SET_SUB_AUTHORITY(subAuthority1);
+        SET_SUB_AUTHORITY(subAuthority2);
+        SET_SUB_AUTHORITY(subAuthority3);
+        SET_SUB_AUTHORITY(subAuthority4);
+        SET_SUB_AUTHORITY(subAuthority5);
+        SET_SUB_AUTHORITY(subAuthority6);
+        SET_SUB_AUTHORITY(subAuthority7);
 
 #undef SET_SUB_AUTHORITY
+    }
+} SidFields, *PSidFields;
+
+DWORD PrintSid(int argc, wchar_t* argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> psid;
+    Sid sid;
+    SidFields sf;
+
+    sf.Parse(argc, argv);
 
     error = CreateSid(
         psid,
@@ -2031,9 +2037,41 @@ DWORD PrintTokenUser(HANDLE tokenHandle)
     return error;
 }
 
-DWORD SetTokenUser(HANDLE tokenHandle)
+DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
 {
     DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> psid;
+    TOKEN_USER user;
+    SidFields sf;
+    sf.Parse(argc, argv);
+
+    error = CreateSid(
+        psid,
+        sf.authority,
+        sf.subAuthorityCount,
+        sf.subAuthority0,
+        sf.subAuthority1,
+        sf.subAuthority2,
+        sf.subAuthority3,
+        sf.subAuthority4,
+        sf.subAuthority5,
+        sf.subAuthority6,
+        sf.subAuthority7);
+    RETURN_IF_FAILED(error);
+
+    user.User.Sid = static_cast<PSID>(psid.get());
+    user.User.Attributes = 0;
+
+    if (!SetTokenInformation(
+        tokenHandle,
+        TOKEN_INFORMATION_CLASS::TokenUser,
+        &user,
+        sizeof(user) + sizeof(psid.get())))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
     return error;
 }
 
@@ -2041,6 +2079,7 @@ void Usage(int argc, wchar_t * argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" token" << std::endl;
+    std::wcout << argv[0] << L" token user <subauthority0> <subauthority1> ..." << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
     std::wcout << argv[0] << L" sid" << std::endl;
@@ -2092,6 +2131,28 @@ int wmain(int argc, wchar_t* argv[])
         PrintTokenUser(threadToken.Get());
         std::wcout << L"Duplicate token user =======>" << std::endl;
         PrintTokenUser(duplicateToken.Get());
+
+        if (argc > 2)
+        {
+            command.assign(argv[2]);
+
+            if (command == L"user")
+            {
+                if (argc < 4)
+                {
+                    Usage(argc, argv);
+                    error = ERROR_BAD_ARGUMENTS;
+                }
+                else
+                {
+                    error = SetTokenUser(duplicateToken.Get(), argc - 3, &argv[3]);
+                    RETURN_IF_FAILED(error);
+
+                    std::wcout << L"Duplicate token user =======>" << std::endl;
+                    PrintTokenUser(duplicateToken.Get());
+                }
+            }
+        }
     }
     else if (command == L"file")
     {
@@ -2155,7 +2216,15 @@ int wmain(int argc, wchar_t* argv[])
             }
             else if (command == L"create")
             {
-                error = PrintSid(argc, argv);
+                if (argc < 4)
+                {
+                    Usage(argc, argv);
+                    error = ERROR_BAD_ARGUMENTS;
+                }
+                else
+                {
+                    error = PrintSid(argc - 3, &argv[3]);
+                }
             }
         }
     }

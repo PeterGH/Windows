@@ -395,6 +395,10 @@ DWORD SetTokenPrivileges(HANDLE tokenHandle)
     error = SetTokenPrivilege(tokenHandle, SE_SECURITY_NAME, true);
     RETURN_IF_FAILED(error);
 
+    // Security Settings, Local Policies, User Rights Assignment, Create a token object
+    // error = SetTokenPrivilege(tokenHandle, SE_CREATE_TOKEN_NAME, true);
+    // RETURN_IF_FAILED(error);
+
     PrintTokenPrivileges(tokenHandle);
     return error;
 }
@@ -556,7 +560,8 @@ enum DeleterType
 {
     None = 0,
     DeleteByteArray,
-    UseFreeSid
+    UseFreeSid,
+    UseLocalFree
 };
 
 class Sid
@@ -655,6 +660,13 @@ public:
                 break;
             case DeleterType::UseFreeSid:
                 if (::FreeSid(_sid) != nullptr)
+                {
+                    error = GetLastError();
+                    RETURN_FAILURE(error);
+                }
+                break;
+            case DeleterType::UseLocalFree:
+                if (::LocalFree(_sid) != nullptr)
                 {
                     error = GetLastError();
                     RETURN_FAILURE(error);
@@ -2037,36 +2049,19 @@ DWORD PrintTokenUser(HANDLE tokenHandle)
     return error;
 }
 
-DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
+DWORD SetTokenUser(HANDLE tokenHandle, const PSID sid)
 {
     DWORD error = ERROR_SUCCESS;
-    std::unique_ptr<byte[]> psid;
     TOKEN_USER user;
-    SidFields sf;
-    sf.Parse(argc, argv);
 
-    error = CreateSid(
-        psid,
-        sf.authority,
-        sf.subAuthorityCount,
-        sf.subAuthority0,
-        sf.subAuthority1,
-        sf.subAuthority2,
-        sf.subAuthority3,
-        sf.subAuthority4,
-        sf.subAuthority5,
-        sf.subAuthority6,
-        sf.subAuthority7);
-    RETURN_IF_FAILED(error);
-
-    user.User.Sid = static_cast<PSID>(psid.get());
+    user.User.Sid = sid;
     user.User.Attributes = 0;
 
     if (!SetTokenInformation(
         tokenHandle,
         TOKEN_INFORMATION_CLASS::TokenUser,
         &user,
-        sizeof(user) + sizeof(psid.get())))
+        sizeof(user) + GetLengthSid(user.User.Sid)))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
@@ -2075,11 +2070,121 @@ DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
     return error;
 }
 
+DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+
+    if (argc <= 0)
+    {
+        RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
+    }
+
+    if (argv[0][0] == L'S')
+    {
+        PSID psid = nullptr;
+        Sid sid;
+
+        if (!ConvertStringSidToSidW(argv[0], &psid))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
+        sid.Attach(psid, DeleterType::UseLocalFree);
+
+        error = SetTokenUser(tokenHandle, psid);
+    }
+    else
+    {
+        std::unique_ptr<byte[]> psid;
+        SidFields sf;
+        sf.Parse(argc, argv);
+
+        error = CreateSid(
+            psid,
+            sf.authority,
+            sf.subAuthorityCount,
+            sf.subAuthority0,
+            sf.subAuthority1,
+            sf.subAuthority2,
+            sf.subAuthority3,
+            sf.subAuthority4,
+            sf.subAuthority5,
+            sf.subAuthority6,
+            sf.subAuthority7);
+        RETURN_IF_FAILED(error);
+
+        error = SetTokenUser(tokenHandle, static_cast<PSID>(psid.get()));
+    }
+    return error;
+}
+
+DWORD TokenMain(int argc, wchar_t* argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+
+    Impersonator impersonator;
+    error = impersonator.BeginImpersonateSelf();
+    RETURN_IF_FAILED(error);
+
+    ThreadToken threadToken;
+    ThreadToken duplicateToken;
+
+    error = threadToken.Open();
+    RETURN_IF_FAILED(error);
+
+    std::wcout << L"Duplicate thread token =======>" << std::endl;
+    error = threadToken.Duplicate(&duplicateToken.Get());
+    RETURN_IF_FAILED(error);
+
+    error = SetTokenPrivileges(duplicateToken.Get());
+    RETURN_IF_FAILED(error);
+
+    std::wcout << L"Thread token privileges =======>" << std::endl;
+    PrintTokenPrivileges(threadToken.Get());
+
+    std::wcout << L"Duplicate token privileges =======>" << std::endl;
+    PrintTokenPrivileges(duplicateToken.Get());
+
+    std::wcout << L"Thread token user =======>" << std::endl;
+    PrintTokenUser(threadToken.Get());
+    std::wcout << L"Duplicate token user =======>" << std::endl;
+    PrintTokenUser(duplicateToken.Get());
+
+    if (argc > 0)
+    {
+        int argIndex = 0;
+        std::wstring command(argv[argIndex++]);
+
+        if (command == L"user")
+        {
+            if (argc < argIndex + 1)
+            {
+                RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
+            }
+
+            error = SetTokenUser(duplicateToken.Get(), argc - argIndex, &argv[argIndex]);
+            RETURN_IF_FAILED(error);
+
+            std::wcout << L"Duplicate token user =======>" << std::endl;
+            PrintTokenUser(duplicateToken.Get());
+        }
+        else
+        {
+            RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
+        }
+    }
+
+    return error;
+}
+
+
 void Usage(int argc, wchar_t * argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" token" << std::endl;
     std::wcout << argv[0] << L" token user <subauthority0> <subauthority1> ..." << std::endl;
+    std::wcout << argv[0] << L" token user <sid>" << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
     std::wcout << argv[0] << L" sid" << std::endl;
@@ -2093,70 +2198,23 @@ void Usage(int argc, wchar_t * argv[])
 int wmain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
+    int argIndex = 1;
 
-    if (argc < 2)
+    if (argc < argIndex + 1)
     {
         Usage(argc, argv);
         return ERROR_BAD_ARGUMENTS;
     }
 
-    std::wstring command(argv[1]);
+    std::wstring command(argv[argIndex++]);
 
     if (command == L"token")
     {
-        Impersonator impersonator;
-        error = impersonator.BeginImpersonateSelf();
-        RETURN_IF_FAILED(error);
-
-        ThreadToken threadToken;
-        ThreadToken duplicateToken;
-
-        error = threadToken.Open();
-        RETURN_IF_FAILED(error);
-
-        std::wcout << L"Duplicate thread token =======>" << std::endl;
-        error = threadToken.Duplicate(&duplicateToken.Get());
-        RETURN_IF_FAILED(error);
-
-        error = SetTokenPrivileges(duplicateToken.Get());
-        RETURN_IF_FAILED(error);
-
-        std::wcout << L"Thread token privileges =======>" << std::endl;
-        PrintTokenPrivileges(threadToken.Get());
-
-        std::wcout << L"Duplicate token privileges =======>" << std::endl;
-        PrintTokenPrivileges(duplicateToken.Get());
-
-        std::wcout << L"Thread token user =======>" << std::endl;
-        PrintTokenUser(threadToken.Get());
-        std::wcout << L"Duplicate token user =======>" << std::endl;
-        PrintTokenUser(duplicateToken.Get());
-
-        if (argc > 2)
-        {
-            command.assign(argv[2]);
-
-            if (command == L"user")
-            {
-                if (argc < 4)
-                {
-                    Usage(argc, argv);
-                    error = ERROR_BAD_ARGUMENTS;
-                }
-                else
-                {
-                    error = SetTokenUser(duplicateToken.Get(), argc - 3, &argv[3]);
-                    RETURN_IF_FAILED(error);
-
-                    std::wcout << L"Duplicate token user =======>" << std::endl;
-                    PrintTokenUser(duplicateToken.Get());
-                }
-            }
-        }
+        error = TokenMain(argc - argIndex, &argv[argIndex]);
     }
     else if (command == L"file")
     {
-        if (argc < 3)
+        if (argc < argIndex + 1)
         {
             Usage(argc, argv);
             return ERROR_BAD_ARGUMENTS;
@@ -2169,17 +2227,17 @@ int wmain(int argc, wchar_t* argv[])
         error = SetThreadTokenPrivileges();
         RETURN_IF_FAILED(error);
 
-        error = PrintFileSecurityDescriptor(argv[2]);
+        error = PrintFileSecurityDescriptor(argv[argIndex]);
     }
     else if (command == L"sd")
     {
-        if (argc < 3)
+        if (argc < argIndex + 1)
         {
             Usage(argc, argv);
             return ERROR_BAD_ARGUMENTS;
         }
 
-        std::wstring securityDescriptorString(argv[2]);
+        std::wstring securityDescriptorString(argv[argIndex]);
         std::wcout << L"Security descriptor is:\"" << securityDescriptorString << L"\"" << std::endl;
 
         SecurityDescriptor securityDescriptor;
@@ -2190,23 +2248,23 @@ int wmain(int argc, wchar_t* argv[])
     }
     else if (command == L"sid")
     {
-        if (argc == 2)
+        if (argc == argIndex)
         {
             error = PrintSids();
         }
         else
         {
-            command.assign(argv[2]);
+            command.assign(argv[argIndex++]);
 
             if (command == L"wellknown")
             {
-                if (argc == 3)
+                if (argc == argIndex)
                 {
                     error = PrintWellKnownSids();
                 }
                 else
                 {
-                    WELL_KNOWN_SID_TYPE type = static_cast<WELL_KNOWN_SID_TYPE>(_wtoi(argv[3]));
+                    WELL_KNOWN_SID_TYPE type = static_cast<WELL_KNOWN_SID_TYPE>(_wtoi(argv[argIndex]));
                     error = PrintWellKnownSid(type);
                 }
             }
@@ -2216,14 +2274,14 @@ int wmain(int argc, wchar_t* argv[])
             }
             else if (command == L"create")
             {
-                if (argc < 4)
+                if (argc < argIndex + 1)
                 {
                     Usage(argc, argv);
                     error = ERROR_BAD_ARGUMENTS;
                 }
                 else
                 {
-                    error = PrintSid(argc - 3, &argv[3]);
+                    error = PrintSid(argc - argIndex, &argv[argIndex]);
                 }
             }
         }

@@ -2119,6 +2119,39 @@ DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
     return error;
 }
 
+class Arg
+{
+private:
+    wchar_t **_argv;
+    int _argc;
+    int _index;
+
+public:
+    Arg(int argc, wchar_t *argv[], int index = 0)
+        : _argc(argc), _argv(argv), _index(index)
+    {}
+
+    bool HasNext() const
+    {
+        return _index < _argc;
+    }
+
+    wchar_t* Next()
+    {
+        return HasNext() ? _argv[_index++] : nullptr;
+    }
+
+    std::wstring NextAsString()
+    {
+        return HasNext() ? std::wstring(_argv[_index++]) : L"";
+    }
+
+    Arg Rest()
+    {
+        return Arg(_argc - _index, &_argv[_index], 0);
+    }
+};
+
 DWORD TokenMain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
@@ -2178,6 +2211,47 @@ DWORD TokenMain(int argc, wchar_t* argv[])
     return error;
 }
 
+DWORD SecurityDescriptor1()
+{
+    DWORD error = ERROR_SUCCESS;
+    SECURITY_DESCRIPTOR sd;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    SecurityDescriptor securityDescriptor;
+    
+
+    return error;
+}
+
+DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+    Arg arg(argc, argv);
+
+    if (arg.HasNext())
+    {
+        std::wstring securityDescriptorString = arg.NextAsString();
+        std::wcout << L"Security descriptor is:\"" << securityDescriptorString << L"\"" << std::endl;
+
+        SecurityDescriptor securityDescriptor;
+        securityDescriptor.Set(securityDescriptorString);
+
+        std::wcout << L"Dump:" << std::endl;
+        securityDescriptor.Print();
+    }
+    else
+    {
+
+    }
+
+    return error;
+}
+
 
 void Usage(int argc, wchar_t * argv[])
 {
@@ -2231,20 +2305,7 @@ int wmain(int argc, wchar_t* argv[])
     }
     else if (command == L"sd")
     {
-        if (argc < argIndex + 1)
-        {
-            Usage(argc, argv);
-            return ERROR_BAD_ARGUMENTS;
-        }
-
-        std::wstring securityDescriptorString(argv[argIndex]);
-        std::wcout << L"Security descriptor is:\"" << securityDescriptorString << L"\"" << std::endl;
-
-        SecurityDescriptor securityDescriptor;
-        securityDescriptor.Set(securityDescriptorString);
-
-        std::wcout << L"Dump:" << std::endl;
-        securityDescriptor.Print();
+        error = SecurityDescriptorMain(argc - argIndex, &argv[argIndex]);
     }
     else if (command == L"sid")
     {

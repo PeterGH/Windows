@@ -2215,6 +2215,9 @@ DWORD SecurityDescriptor1()
 {
     DWORD error = ERROR_SUCCESS;
     SECURITY_DESCRIPTOR sd;
+    LPWSTR strDescriptor;
+    ULONG strLen = 0;
+    SECURITY_INFORMATION si;
 
     if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
     {
@@ -2222,8 +2225,42 @@ DWORD SecurityDescriptor1()
         RETURN_FAILURE(error);
     }
 
-    SecurityDescriptor securityDescriptor;
-    
+    si = OWNER_SECURITY_INFORMATION
+        | GROUP_SECURITY_INFORMATION
+        | DACL_SECURITY_INFORMATION
+        | SACL_SECURITY_INFORMATION
+        | LABEL_SECURITY_INFORMATION
+        | ATTRIBUTE_SECURITY_INFORMATION
+        | SCOPE_SECURITY_INFORMATION
+        | PROCESS_TRUST_LABEL_SECURITY_INFORMATION
+        | ACCESS_FILTER_SECURITY_INFORMATION
+        | PROTECTED_DACL_SECURITY_INFORMATION
+        | PROTECTED_SACL_SECURITY_INFORMATION
+        | UNPROTECTED_DACL_SECURITY_INFORMATION
+        | UNPROTECTED_SACL_SECURITY_INFORMATION;
+        // BACKUP_SECURITY_INFORMATION
+
+
+    if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        &sd,
+        SDDL_REVISION_1,
+        si,
+        &strDescriptor,
+        &strLen))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (strDescriptor == nullptr)
+    {
+        RETURN_FAILURE(ERROR_INVALID_SECURITY_DESCR);
+    }
+
+    std::wstring securityDescriptor(strDescriptor);
+    LocalFree(strDescriptor);
+
+    std::wcout << L"Security Descriptor: [" << securityDescriptor << L"]" << std::endl;
 
     return error;
 }
@@ -2246,7 +2283,7 @@ DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
     }
     else
     {
-
+        error = SecurityDescriptor1();
     }
 
     return error;

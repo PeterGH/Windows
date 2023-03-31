@@ -22,12 +22,96 @@
         return e2; \
     }
 
+enum DeleterType
+{
+    None = 0,
+    DeleteByteArray,
+    UseFreeSid,
+    UseLocalFree,
+    UseHeapFree
+};
+
+template<class T> class Pointer
+{
+private:
+    T* _pointer;
+    DeleterType _deleterType;
+
+public:
+    Pointer(T* pointer = nullptr, DeleterType deleterType = DeleterType::None)
+        : _pointer(pointer), _deleterType(deleterType)
+    {}
+
+    virtual ~Pointer()
+    {
+        Free();
+    }
+
+    void SetDeleterType(DeleterType deleterType)
+    {
+        _deleterType = deleterType;
+    }
+
+    void Attach(T* pointer, DeleterType deleterType = DeleterType::None)
+    {
+        Free();
+        _pointer = pointer;
+        _deleterType = deleterType;
+    }
+
+    Pointer& operator=(T* pointer)
+    {
+        Attach(pointer);
+        return *this;
+    }
+
+    DWORD Free()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_pointer != nullptr)
+        {
+            switch (_deleterType)
+            {
+            case DeleterType::DeleteByteArray:
+                delete[] static_cast<byte*>(_pointer);
+                break;
+            case DeleterType::UseFreeSid:
+                if (::FreeSid(_pointer) != nullptr)
+                {
+                    error = GetLastError();
+                }
+                break;
+            case DeleterType::UseLocalFree:
+                if (::LocalFree(_pointer) != nullptr)
+                {
+                    error = GetLastError();
+                }
+                break;
+            case DeleterType::UseHeapFree:
+                if (!::HeapFree(GetProcessHeap(), 0, static_cast<LPVOID>(_pointer)))
+                {
+                    error = GetLastError();
+                }
+            default:
+                break;
+            }
+
+            RETURN_IF_FAILED(error);
+            _pointer = nullptr;
+            _deleterType = DeleterType::None;
+        }
+
+        return error;
+    }
+};
+
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
     DWORD error = ERROR_SUCCESS;
     DWORD infoLength = 0;
 
-    if (GetTokenInformation(tokenHandle, infoClass, NULL, 0, &infoLength))
+    if (GetTokenInformation(tokenHandle, infoClass, nullptr, 0, &infoLength))
     {
         std::wcerr << L"GetTokenInformation succeeded unexpectedly, infoLength " << infoLength << std::endl;
         return ERROR_BAD_ARGUMENTS;
@@ -267,18 +351,11 @@ public:
 
     HANDLE& Get() { return _handle; }
 
-    Handle& operator=(HANDLE handle)
+    HANDLE Release()
     {
-        _handle = handle;
-        std::wcout << L"Asigned handle 0x" << std::hex << handle << std::dec << std::endl;
-        return *this;
-    }
-
-    bool operator==(HANDLE handle)
-    {
-        std::wcout << L"Check if handle 0x" << std::hex << _handle << std::dec
-            << L"==0x" << std::hex << handle << std::dec << std::endl;
-        return _handle == handle;
+        HANDLE copy = _handle;
+        _handle = INVALID_HANDLE_VALUE;
+        return copy;
     }
 
     void Attach(HANDLE handle)
@@ -289,7 +366,17 @@ public:
         }
 
         _handle = handle;
-        std::wcout << L"Attached handle 0x" << std::hex << handle << std::dec << std::endl;
+    }
+
+    Handle& operator=(HANDLE handle)
+    {
+        Attach(handle);
+        return *this;
+    }
+
+    bool operator==(HANDLE handle)
+    {
+        return _handle == handle;
     }
 
     DWORD Close()
@@ -298,7 +385,6 @@ public:
 
         if (_handle == INVALID_HANDLE_VALUE)
         {
-            std::wcout << L"Handle not opened or already closed." << std::endl;
             return error;
         }
 
@@ -317,12 +403,20 @@ public:
     }
 };
 
-class ThreadToken : public Handle
+class Token : public Handle
 {
+private:
+    bool _isThreadToken;
+    std::wstring _type;
+
 public:
-    ThreadToken()
-        : Handle()
-    {}
+
+    Token(HANDLE tokenHandle = INVALID_HANDLE_VALUE, bool isThreadToken = false)
+        : Handle(tokenHandle),
+        _isThreadToken(isThreadToken)
+    {
+        _type = _isThreadToken ? L"thread" : L"process";
+    }
 
     DWORD Open()
     {
@@ -331,31 +425,44 @@ public:
 
         if (_handle == INVALID_HANDLE_VALUE)
         {
-            success = OpenThreadToken(
-                GetCurrentThread(),
-                TOKEN_ALL_ACCESS,
-                TRUE,
-                &_handle);
+            if (_isThreadToken)
+            {
+                success = OpenThreadToken(
+                    GetCurrentThread(),
+                    TOKEN_ALL_ACCESS,
+                    TRUE,
+                    &_handle);
+            }
+            else
+            {
+                success = OpenProcessToken(
+                    GetCurrentProcess(),
+                    TOKEN_ALL_ACCESS,
+                    &_handle);
+            }
 
             if (success)
             {
-                std::wcout << L"Opened thread token 0x" << std::hex << _handle << std::dec << std::endl;
+                std::wcout << L"Opened " << _type << L" token 0x" << std::hex << _handle << std::dec << std::endl;
             }
             else
             {
                 error = GetLastError();
-                std::wcerr << L"Failed to open thread token." << std::endl;
+                std::wcerr << L"Failed to open " << _type << L" token." << std::endl;
             }
         }
         else
         {
-            std::wcout << L"Already opened thread token 0x" << std::hex << _handle << std::dec << std::endl;
+            std::wcout << L"Already opened " << _type << L" token 0x" << std::hex << _handle << std::dec << std::endl;
         }
 
         return error;
     }
 
-    DWORD Duplicate(PHANDLE duplicateTokenHandle)
+    DWORD Duplicate(
+        PHANDLE duplicateTokenHandle,
+        SECURITY_IMPERSONATION_LEVEL impersonationLevel = SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
+        TOKEN_TYPE tokenType = TOKEN_TYPE::TokenImpersonation)
     {
         DWORD error = ERROR_SUCCESS;
 
@@ -370,8 +477,8 @@ public:
             _handle,
             TOKEN_ALL_ACCESS,
             NULL,
-            SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
-            TOKEN_TYPE::TokenImpersonation,
+            impersonationLevel,
+            tokenType,
             duplicateTokenHandle))
         {
             error = GetLastError();
@@ -380,6 +487,18 @@ public:
 
         return error;
     }
+};
+
+class ThreadToken : public Token
+{
+public:
+    ThreadToken() : Token(INVALID_HANDLE_VALUE, true) {}
+};
+
+class ProcessToken : public Token
+{
+public:
+    ProcessToken() : Token(INVALID_HANDLE_VALUE, false) {}
 };
 
 DWORD SetTokenPrivileges(HANDLE tokenHandle)
@@ -539,7 +658,7 @@ F(WinAuthenticationKeyPropertyAttestationSid); \
 F(WinAuthenticationFreshKeyAuthSid); \
 F(WinBuiltinDeviceOwnersSid);
 
-bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring &strType)
+bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring& strType)
 {
 #define RETURN_IF_IS_WELL_KNOWN_TYPE(x) \
     if (IsWellKnownSid(sid, (x))) \
@@ -555,14 +674,6 @@ bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring
 
     return false;
 }
-
-enum DeleterType
-{
-    None = 0,
-    DeleteByteArray,
-    UseFreeSid,
-    UseLocalFree
-};
 
 class Sid
 {
@@ -1126,7 +1237,7 @@ typedef struct _SidFields {
 
 #undef SET_SUB_AUTHORITY
     }
-} SidFields, *PSidFields;
+} SidFields, * PSidFields;
 
 DWORD PrintSid(int argc, wchar_t* argv[])
 {
@@ -1231,7 +1342,7 @@ std::wstring GuidToString(const GUID& guid)
     return oss.str();
 }
 
-DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
+DWORD AceString(const EXPLICIT_ACCESS_W& ace, std::wstring& aceStr)
 {
     DWORD error = ERROR_SUCCESS;
     std::wostringstream oss;
@@ -1276,7 +1387,7 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 #undef OUT_MASK
 
     oss << L"]";
-    
+
     oss << L"[Mode:" << ace.grfAccessMode;
 
 #define OUT_MODE(x) \
@@ -1296,7 +1407,7 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 #undef OUT_MODE
 
     oss << L"]";
-    
+
     oss << L"[Inheritance:0x" << std::hex << ace.grfInheritance << std::dec;
 
 #define OUT_INHERITANCE(x) \
@@ -1314,12 +1425,12 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
 #undef OUT_INHERITANCE
 
     oss << L"]";
-    
+
     oss << L"[Trustee:";
 
     oss << L"[pMultipleTrustee:0x" << std::hex << ace.Trustee.pMultipleTrustee << std::dec;
     oss << L"]";
-    
+
     oss << L"[MultipleTrusteeOperation:" << ace.Trustee.MultipleTrusteeOperation << L"|";
     switch (ace.Trustee.MultipleTrusteeOperation)
     {
@@ -1334,7 +1445,7 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         break;
     }
     oss << L"]";
-    
+
     oss << L"[TrusteeForm:" << ace.Trustee.TrusteeForm << L"|";
     switch (ace.Trustee.TrusteeForm)
     {
@@ -1345,20 +1456,20 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         oss << L"TRUSTEE_IS_NAME";
         break;
     case TRUSTEE_BAD_FORM:
-        oss << L"TRUSTEE_BAD_FORM"; 
+        oss << L"TRUSTEE_BAD_FORM";
         break;
     case TRUSTEE_IS_OBJECTS_AND_SID:
-        oss << L"TRUSTEE_IS_OBJECTS_AND_SID"; 
+        oss << L"TRUSTEE_IS_OBJECTS_AND_SID";
         break;
     case TRUSTEE_IS_OBJECTS_AND_NAME:
-        oss << L"TRUSTEE_IS_OBJECTS_AND_NAME"; 
+        oss << L"TRUSTEE_IS_OBJECTS_AND_NAME";
         break;
     default:
         oss << L"Unknown";
         break;
     }
     oss << L"]";
-    
+
     oss << L"[TrusteeType:" << ace.Trustee.TrusteeType << L"|";
     switch (ace.Trustee.TrusteeType)
     {
@@ -1394,31 +1505,31 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         break;
     }
     oss << L"]";
-    
+
     oss << L"[";
     switch (ace.Trustee.TrusteeForm)
     {
     case TRUSTEE_IS_SID:
+    {
+        Sid sid(static_cast<PSID>(ace.Trustee.ptstrName));
+        oss << L"SID:" << sid.Str();
+        if (sid.IsWellKnown())
         {
-            Sid sid(static_cast<PSID>(ace.Trustee.ptstrName));
-            oss << L"SID:" << sid.Str();
-            if (sid.IsWellKnown())
-            {
-                oss << L"|" << sid.WellKnownSidTypeString();
-            }
+            oss << L"|" << sid.WellKnownSidTypeString();
         }
-        break;
+    }
+    break;
     case TRUSTEE_IS_NAME:
-        {
-            std::wstring name(ace.Trustee.ptstrName);
-            oss << L"NAME:" << name;
-        }
-        break;
+    {
+        std::wstring name(ace.Trustee.ptstrName);
+        oss << L"NAME:" << name;
+    }
+    break;
     case TRUSTEE_IS_OBJECTS_AND_SID:
-        {
-            POBJECTS_AND_SID pos = static_cast<POBJECTS_AND_SID>(static_cast<PVOID>(ace.Trustee.ptstrName));
-            oss << L"OBJECTS_AND_SID:";
-            oss << L"[ObjectsPresent:" << pos->ObjectsPresent;
+    {
+        POBJECTS_AND_SID pos = static_cast<POBJECTS_AND_SID>(static_cast<PVOID>(ace.Trustee.ptstrName));
+        oss << L"OBJECTS_AND_SID:";
+        oss << L"[ObjectsPresent:" << pos->ObjectsPresent;
 
 #define OUT_OBJECTSPRESENT(x) \
     if (pos->ObjectsPresent & (x)) \
@@ -1426,27 +1537,27 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         oss << L"|" << #x; \
     }
 
-            OUT_OBJECTSPRESENT(ACE_OBJECT_TYPE_PRESENT);
-            OUT_OBJECTSPRESENT(ACE_INHERITED_OBJECT_TYPE_PRESENT);
+        OUT_OBJECTSPRESENT(ACE_OBJECT_TYPE_PRESENT);
+        OUT_OBJECTSPRESENT(ACE_INHERITED_OBJECT_TYPE_PRESENT);
 
 #undef OUT_OBJECTSPRESENT
 
-            oss << L"][ObjectTypeGuid:" << GuidToString(pos->ObjectTypeGuid);
-            oss << L"][InheritedObjectTypeGuid:" << GuidToString(pos->InheritedObjectTypeGuid);
-            Sid sid(pos->pSid);
-            oss << L"[Sid:" << sid.Str();
-            if (sid.IsWellKnown())
-            {
-                oss << L"|" << sid.WellKnownSidTypeString();
-            }
-            oss << L"]";
-        }
-        break;
-    case TRUSTEE_IS_OBJECTS_AND_NAME:
+        oss << L"][ObjectTypeGuid:" << GuidToString(pos->ObjectTypeGuid);
+        oss << L"][InheritedObjectTypeGuid:" << GuidToString(pos->InheritedObjectTypeGuid);
+        Sid sid(pos->pSid);
+        oss << L"[Sid:" << sid.Str();
+        if (sid.IsWellKnown())
         {
-            POBJECTS_AND_NAME_W pon = static_cast<POBJECTS_AND_NAME_W>(static_cast<PVOID>(ace.Trustee.ptstrName));
-            oss << L"OBJECTS_AND_NAME:";
-            oss << L"[ObjectsPresent:" << pon->ObjectsPresent;
+            oss << L"|" << sid.WellKnownSidTypeString();
+        }
+        oss << L"]";
+    }
+    break;
+    case TRUSTEE_IS_OBJECTS_AND_NAME:
+    {
+        POBJECTS_AND_NAME_W pon = static_cast<POBJECTS_AND_NAME_W>(static_cast<PVOID>(ace.Trustee.ptstrName));
+        oss << L"OBJECTS_AND_NAME:";
+        oss << L"[ObjectsPresent:" << pon->ObjectsPresent;
 
 #define OUT_OBJECTSPRESENT(x) \
     if (pon->ObjectsPresent & (x)) \
@@ -1454,64 +1565,64 @@ DWORD AceString(const EXPLICIT_ACCESS_W &ace, std::wstring& aceStr)
         oss << L"|" << #x; \
     }
 
-            OUT_OBJECTSPRESENT(ACE_OBJECT_TYPE_PRESENT);
-            OUT_OBJECTSPRESENT(ACE_INHERITED_OBJECT_TYPE_PRESENT);
+        OUT_OBJECTSPRESENT(ACE_OBJECT_TYPE_PRESENT);
+        OUT_OBJECTSPRESENT(ACE_INHERITED_OBJECT_TYPE_PRESENT);
 
 #undef OUT_OBJECTSPRESENT
 
-            oss << L"][ObjectTypeName:" << (pon->ObjectTypeName == nullptr ? L"NULL" : std::wstring(pon->ObjectTypeName));
-            oss << L"][InheritedObjectTypeName:" << (pon->InheritedObjectTypeName == nullptr ? L"NULL" : std::wstring(pon->InheritedObjectTypeName));
-            oss << L"][ObjectType:";
-            switch (pon->ObjectType)
-            {
-            case SE_UNKNOWN_OBJECT_TYPE:
-                oss << L"SE_UNKNOWN_OBJECT_TYPE";
-                break;
-            case SE_FILE_OBJECT:
-                oss << L"SE_FILE_OBJECT";
-                break;
-            case SE_SERVICE:
-                oss << L"SE_SERVICE";
-                break;
-            case SE_PRINTER:
-                oss << L"SE_PRINTER";
-                break;
-            case SE_REGISTRY_KEY:
-                oss << L"SE_REGISTRY_KEY";
-                break;
-            case SE_LMSHARE:
-                oss << L"SE_LMSHARE";
-                break;
-            case SE_KERNEL_OBJECT:
-                oss << L"SE_KERNEL_OBJECT";
-                break;
-            case SE_WINDOW_OBJECT:
-                oss << L"SE_WINDOW_OBJECT";
-                break;
-            case SE_DS_OBJECT:
-                oss << L"SE_DS_OBJECT";
-                break;
-            case SE_DS_OBJECT_ALL:
-                oss << L"SE_DS_OBJECT_ALL";
-                break;
-            case SE_PROVIDER_DEFINED_OBJECT:
-                oss << L"SE_PROVIDER_DEFINED_OBJECT";
-                break;
-            case SE_WMIGUID_OBJECT:
-                oss << L"SE_WMIGUID_OBJECT";
-                break;
-            case SE_REGISTRY_WOW64_32KEY:
-                oss << L"SE_REGISTRY_WOW64_32KEY";
-                break;
-            case SE_REGISTRY_WOW64_64KEY:
-                oss << L"SE_REGISTRY_WOW64_64KEY";
-                break;
-            default:
-                break;
-            }
-            oss << L"][Name:" << (pon->ptstrName == nullptr ? L"NULL" : std::wstring(pon->ptstrName)) << L"]";
+        oss << L"][ObjectTypeName:" << (pon->ObjectTypeName == nullptr ? L"NULL" : std::wstring(pon->ObjectTypeName));
+        oss << L"][InheritedObjectTypeName:" << (pon->InheritedObjectTypeName == nullptr ? L"NULL" : std::wstring(pon->InheritedObjectTypeName));
+        oss << L"][ObjectType:";
+        switch (pon->ObjectType)
+        {
+        case SE_UNKNOWN_OBJECT_TYPE:
+            oss << L"SE_UNKNOWN_OBJECT_TYPE";
+            break;
+        case SE_FILE_OBJECT:
+            oss << L"SE_FILE_OBJECT";
+            break;
+        case SE_SERVICE:
+            oss << L"SE_SERVICE";
+            break;
+        case SE_PRINTER:
+            oss << L"SE_PRINTER";
+            break;
+        case SE_REGISTRY_KEY:
+            oss << L"SE_REGISTRY_KEY";
+            break;
+        case SE_LMSHARE:
+            oss << L"SE_LMSHARE";
+            break;
+        case SE_KERNEL_OBJECT:
+            oss << L"SE_KERNEL_OBJECT";
+            break;
+        case SE_WINDOW_OBJECT:
+            oss << L"SE_WINDOW_OBJECT";
+            break;
+        case SE_DS_OBJECT:
+            oss << L"SE_DS_OBJECT";
+            break;
+        case SE_DS_OBJECT_ALL:
+            oss << L"SE_DS_OBJECT_ALL";
+            break;
+        case SE_PROVIDER_DEFINED_OBJECT:
+            oss << L"SE_PROVIDER_DEFINED_OBJECT";
+            break;
+        case SE_WMIGUID_OBJECT:
+            oss << L"SE_WMIGUID_OBJECT";
+            break;
+        case SE_REGISTRY_WOW64_32KEY:
+            oss << L"SE_REGISTRY_WOW64_32KEY";
+            break;
+        case SE_REGISTRY_WOW64_64KEY:
+            oss << L"SE_REGISTRY_WOW64_64KEY";
+            break;
+        default:
+            break;
         }
-        break;
+        oss << L"][Name:" << (pon->ptstrName == nullptr ? L"NULL" : std::wstring(pon->ptstrName)) << L"]";
+    }
+    break;
     case TRUSTEE_BAD_FORM:
         oss << L"TRUSTEE_BAD_FORM";
         break;
@@ -1529,14 +1640,14 @@ DWORD GetSecurityDescriptorInfo(
     LPDWORD length,
     LPDWORD revision,
     PSECURITY_DESCRIPTOR_CONTROL control,
-    PSID *owner,
+    PSID* owner,
     LPBOOL ownerDefaulted,
-    PSID *group,
+    PSID* group,
     LPBOOL groupDefaulted,
-    PACL *dacl,
+    PACL* dacl,
     LPBOOL daclPresent,
     LPBOOL daclDefaulted,
-    PACL *sacl,
+    PACL* sacl,
     LPBOOL saclPresent,
     LPBOOL saclDefaulted)
 {
@@ -1941,7 +2052,7 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
 
     fileHandle = CreateFileW(
         file.c_str(),
-        GENERIC_READ|ACCESS_SYSTEM_SECURITY|WRITE_OWNER|WRITE_DAC|READ_CONTROL,
+        GENERIC_READ | ACCESS_SYSTEM_SECURITY | WRITE_OWNER | WRITE_DAC | READ_CONTROL,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr,
         OPEN_EXISTING,
@@ -2070,7 +2181,7 @@ DWORD SetTokenUser(HANDLE tokenHandle, const PSID sid)
     return error;
 }
 
-DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
+DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
 
@@ -2122,12 +2233,12 @@ DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t *argv[])
 class Arg
 {
 private:
-    wchar_t **_argv;
+    wchar_t** _argv;
     int _argc;
     int _index;
 
 public:
-    Arg(int argc, wchar_t *argv[], int index = 0)
+    Arg(int argc, wchar_t* argv[], int index = 0)
         : _argc(argc), _argv(argv), _index(index)
     {}
 
@@ -2238,7 +2349,7 @@ DWORD SecurityDescriptor1()
         | PROTECTED_SACL_SECURITY_INFORMATION
         | UNPROTECTED_DACL_SECURITY_INFORMATION
         | UNPROTECTED_SACL_SECURITY_INFORMATION;
-        // BACKUP_SECURITY_INFORMATION
+    // BACKUP_SECURITY_INFORMATION
 
 
     if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
@@ -2290,7 +2401,7 @@ DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
 }
 
 
-void Usage(int argc, wchar_t * argv[])
+void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" token" << std::endl;

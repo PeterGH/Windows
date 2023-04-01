@@ -22,6 +22,145 @@
         return e2; \
     }
 
+#define CALL_FUNC_ON_WELL_KNOWN_SIDS(F) \
+F(WinNullSid); \
+F(WinWorldSid); \
+F(WinLocalSid); \
+F(WinCreatorOwnerSid); \
+F(WinCreatorGroupSid); \
+F(WinCreatorOwnerServerSid); \
+F(WinCreatorGroupServerSid); \
+F(WinNtAuthoritySid); \
+F(WinDialupSid); \
+F(WinNetworkSid); \
+F(WinBatchSid); \
+F(WinInteractiveSid); \
+F(WinServiceSid); \
+F(WinAnonymousSid); \
+F(WinProxySid); \
+F(WinEnterpriseControllersSid); \
+F(WinSelfSid); \
+F(WinAuthenticatedUserSid); \
+F(WinRestrictedCodeSid); \
+F(WinTerminalServerSid); \
+F(WinRemoteLogonIdSid); \
+F(WinLogonIdsSid); \
+F(WinLocalSystemSid); \
+F(WinLocalServiceSid); \
+F(WinNetworkServiceSid); \
+F(WinBuiltinDomainSid); \
+F(WinBuiltinAdministratorsSid); \
+F(WinBuiltinUsersSid); \
+F(WinBuiltinGuestsSid); \
+F(WinBuiltinPowerUsersSid); \
+F(WinBuiltinAccountOperatorsSid); \
+F(WinBuiltinSystemOperatorsSid); \
+F(WinBuiltinPrintOperatorsSid); \
+F(WinBuiltinBackupOperatorsSid); \
+F(WinBuiltinReplicatorSid); \
+F(WinBuiltinPreWindows2000CompatibleAccessSid); \
+F(WinBuiltinRemoteDesktopUsersSid); \
+F(WinBuiltinNetworkConfigurationOperatorsSid); \
+F(WinAccountAdministratorSid); \
+F(WinAccountGuestSid); \
+F(WinAccountKrbtgtSid); \
+F(WinAccountDomainAdminsSid); \
+F(WinAccountDomainUsersSid); \
+F(WinAccountDomainGuestsSid); \
+F(WinAccountComputersSid); \
+F(WinAccountControllersSid); \
+F(WinAccountCertAdminsSid); \
+F(WinAccountSchemaAdminsSid); \
+F(WinAccountEnterpriseAdminsSid); \
+F(WinAccountPolicyAdminsSid); \
+F(WinAccountRasAndIasServersSid); \
+F(WinNTLMAuthenticationSid); \
+F(WinDigestAuthenticationSid); \
+F(WinSChannelAuthenticationSid); \
+F(WinThisOrganizationSid); \
+F(WinOtherOrganizationSid); \
+F(WinBuiltinIncomingForestTrustBuildersSid); \
+F(WinBuiltinPerfMonitoringUsersSid); \
+F(WinBuiltinPerfLoggingUsersSid); \
+F(WinBuiltinAuthorizationAccessSid); \
+F(WinBuiltinTerminalServerLicenseServersSid); \
+F(WinBuiltinDCOMUsersSid); \
+F(WinBuiltinIUsersSid); \
+F(WinIUserSid); \
+F(WinBuiltinCryptoOperatorsSid); \
+F(WinUntrustedLabelSid); \
+F(WinLowLabelSid); \
+F(WinMediumLabelSid); \
+F(WinHighLabelSid); \
+F(WinSystemLabelSid); \
+F(WinWriteRestrictedCodeSid); \
+F(WinCreatorOwnerRightsSid); \
+F(WinCacheablePrincipalsGroupSid); \
+F(WinNonCacheablePrincipalsGroupSid); \
+F(WinEnterpriseReadonlyControllersSid); \
+F(WinAccountReadonlyControllersSid); \
+F(WinBuiltinEventLogReadersGroup); \
+F(WinNewEnterpriseReadonlyControllersSid); \
+F(WinBuiltinCertSvcDComAccessGroup); \
+F(WinMediumPlusLabelSid); \
+F(WinLocalLogonSid); \
+F(WinConsoleLogonSid); \
+F(WinThisOrganizationCertificateSid); \
+F(WinApplicationPackageAuthoritySid); \
+F(WinBuiltinAnyPackageSid); \
+F(WinCapabilityInternetClientSid); \
+F(WinCapabilityInternetClientServerSid); \
+F(WinCapabilityPrivateNetworkClientServerSid); \
+F(WinCapabilityPicturesLibrarySid); \
+F(WinCapabilityVideosLibrarySid); \
+F(WinCapabilityMusicLibrarySid); \
+F(WinCapabilityDocumentsLibrarySid); \
+F(WinCapabilitySharedUserCertificatesSid); \
+F(WinCapabilityEnterpriseAuthenticationSid); \
+F(WinCapabilityRemovableStorageSid); \
+F(WinBuiltinRDSRemoteAccessServersSid); \
+F(WinBuiltinRDSEndpointServersSid); \
+F(WinBuiltinRDSManagementServersSid); \
+F(WinUserModeDriversSid); \
+F(WinBuiltinHyperVAdminsSid); \
+F(WinAccountCloneableControllersSid); \
+F(WinBuiltinAccessControlAssistanceOperatorsSid); \
+F(WinBuiltinRemoteManagementUsersSid); \
+F(WinAuthenticationAuthorityAssertedSid); \
+F(WinAuthenticationServiceAssertedSid); \
+F(WinLocalAccountSid); \
+F(WinLocalAccountAndAdministratorSid); \
+F(WinAccountProtectedUsersSid); \
+F(WinCapabilityAppointmentsSid); \
+F(WinCapabilityContactsSid); \
+F(WinAccountDefaultSystemManagedSid); \
+F(WinBuiltinDefaultSystemManagedGroupSid); \
+F(WinBuiltinStorageReplicaAdminsSid); \
+F(WinAccountKeyAdminsSid); \
+F(WinAccountEnterpriseKeyAdminsSid); \
+F(WinAuthenticationKeyTrustSid); \
+F(WinAuthenticationKeyPropertyMFASid); \
+F(WinAuthenticationKeyPropertyAttestationSid); \
+F(WinAuthenticationFreshKeyAuthSid); \
+F(WinBuiltinDeviceOwnersSid);
+
+bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring& strType)
+{
+#define RETURN_IF_IS_WELL_KNOWN_TYPE(x) \
+    if (::IsWellKnownSid(sid, (x))) \
+    { \
+        type = x; \
+        strType = L#x; \
+        return true; \
+    }
+
+    CALL_FUNC_ON_WELL_KNOWN_SIDS(RETURN_IF_IS_WELL_KNOWN_TYPE);
+
+#undef RETURN_IF_IS_WELL_KNOWN_TYPE
+
+    return false;
+}
+
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
     DWORD error = ERROR_SUCCESS;
@@ -44,26 +183,18 @@ DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass,
     return error;
 }
 
-enum class DeleterType
-{
-    None = 0,
-    DeleteByteArray,
-    UseFreeSid,
-    UseLocalFree,
-    UseHeapFree
-};
-
 enum class AllocType
 {
     None = 0,
     UseNewByteArray,
     UseHeapAlloc,
-    UseLocalAlloc
+    UseLocalAlloc,
+    UseAllocateAndInitializeSid
 };
 
 template<class T> class Pointer
 {
-private:
+protected:
     T* _pointer;
     AllocType _allocType;
 
@@ -101,6 +232,12 @@ public:
     {
         return _pointer == pointer;
     }
+
+    T*& operator->() { return _pointer; }
+
+    template<typename X = T>
+    typename std::enable_if<!std::is_void<X>::value>::type&
+    operator*() { return *_pointer; }
 
     virtual DWORD Alloc(size_t byteCount)
     {
@@ -182,6 +319,12 @@ public:
                     error = GetLastError();
                 }
                 break;
+            case AllocType::UseAllocateAndInitializeSid:
+                if (::FreeSid(static_cast<PSID>(_pointer)) != nullptr)
+                {
+                    error = GetLastError();
+                }
+                break;
             default:
                 break;
             }
@@ -192,6 +335,91 @@ public:
         }
 
         return error;
+    }
+};
+
+class Sid : public Pointer<VOID>
+{
+private:
+    std::wstring _str;
+    WELL_KNOWN_SID_TYPE _type;
+    std::wstring _strType;
+    bool _typeChecked;
+    bool _isWellKnown;
+
+    void CheckWellKnownSidType()
+    {
+        if (!_typeChecked)
+        {
+            _isWellKnown = GetWellKnownSidType(_pointer, _type, _strType);
+            _typeChecked = true;
+        }
+    }
+
+public:
+
+    Sid(PSID sid = nullptr, AllocType allocType = AllocType::None)
+        : Pointer(sid, allocType), _type(WinNullSid), _typeChecked(false), _isWellKnown(false)
+    {}
+
+    std::wstring& Str()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_str.empty())
+        {
+            Pointer<WCHAR> str;
+            if (!::ConvertSidToStringSidW(_pointer, &str.Get()))
+            {
+                error = GetLastError();
+                std::wcerr << L"ConvertSidToStringSidW(0x" << std::hex << _pointer << std::dec << L") failed, error=" << error << std::endl;
+            }
+            else
+            {
+                str.SetAllocType(AllocType::UseLocalAlloc);
+                _str.assign(str.Get());
+            }
+        }
+
+        return _str;
+    }
+
+    bool IsWellKnown()
+    {
+        CheckWellKnownSidType();
+        return _isWellKnown;
+    }
+
+    WELL_KNOWN_SID_TYPE WellKnownSidType()
+    {
+        CheckWellKnownSidType();
+        return _type;
+    }
+
+    std::wstring& WellKnownSidTypeString()
+    {
+        CheckWellKnownSidType();
+        return _strType;
+    }
+
+    virtual DWORD Free() override
+    {
+        _str.clear();
+        _type = WinNullSid;
+        _strType.clear();
+        _typeChecked = false;
+        _isWellKnown = false;
+        return Pointer::Free();
+    }
+
+    void Print()
+    {
+        std::wcout << Str() << L"[IsWellKnown=" << IsWellKnown();
+        if (_isWellKnown)
+        {
+            std::wcout << L"|Type=" << _type << L"|" << _strType;
+        }
+        std::wcout << L"]" << std::endl;
     }
 };
 
@@ -626,298 +854,13 @@ DWORD SetThreadTokenPrivileges()
     return error;
 }
 
-#define CALL_FUNC_ON_WELL_KNOWN_SIDS(F) \
-F(WinNullSid); \
-F(WinWorldSid); \
-F(WinLocalSid); \
-F(WinCreatorOwnerSid); \
-F(WinCreatorGroupSid); \
-F(WinCreatorOwnerServerSid); \
-F(WinCreatorGroupServerSid); \
-F(WinNtAuthoritySid); \
-F(WinDialupSid); \
-F(WinNetworkSid); \
-F(WinBatchSid); \
-F(WinInteractiveSid); \
-F(WinServiceSid); \
-F(WinAnonymousSid); \
-F(WinProxySid); \
-F(WinEnterpriseControllersSid); \
-F(WinSelfSid); \
-F(WinAuthenticatedUserSid); \
-F(WinRestrictedCodeSid); \
-F(WinTerminalServerSid); \
-F(WinRemoteLogonIdSid); \
-F(WinLogonIdsSid); \
-F(WinLocalSystemSid); \
-F(WinLocalServiceSid); \
-F(WinNetworkServiceSid); \
-F(WinBuiltinDomainSid); \
-F(WinBuiltinAdministratorsSid); \
-F(WinBuiltinUsersSid); \
-F(WinBuiltinGuestsSid); \
-F(WinBuiltinPowerUsersSid); \
-F(WinBuiltinAccountOperatorsSid); \
-F(WinBuiltinSystemOperatorsSid); \
-F(WinBuiltinPrintOperatorsSid); \
-F(WinBuiltinBackupOperatorsSid); \
-F(WinBuiltinReplicatorSid); \
-F(WinBuiltinPreWindows2000CompatibleAccessSid); \
-F(WinBuiltinRemoteDesktopUsersSid); \
-F(WinBuiltinNetworkConfigurationOperatorsSid); \
-F(WinAccountAdministratorSid); \
-F(WinAccountGuestSid); \
-F(WinAccountKrbtgtSid); \
-F(WinAccountDomainAdminsSid); \
-F(WinAccountDomainUsersSid); \
-F(WinAccountDomainGuestsSid); \
-F(WinAccountComputersSid); \
-F(WinAccountControllersSid); \
-F(WinAccountCertAdminsSid); \
-F(WinAccountSchemaAdminsSid); \
-F(WinAccountEnterpriseAdminsSid); \
-F(WinAccountPolicyAdminsSid); \
-F(WinAccountRasAndIasServersSid); \
-F(WinNTLMAuthenticationSid); \
-F(WinDigestAuthenticationSid); \
-F(WinSChannelAuthenticationSid); \
-F(WinThisOrganizationSid); \
-F(WinOtherOrganizationSid); \
-F(WinBuiltinIncomingForestTrustBuildersSid); \
-F(WinBuiltinPerfMonitoringUsersSid); \
-F(WinBuiltinPerfLoggingUsersSid); \
-F(WinBuiltinAuthorizationAccessSid); \
-F(WinBuiltinTerminalServerLicenseServersSid); \
-F(WinBuiltinDCOMUsersSid); \
-F(WinBuiltinIUsersSid); \
-F(WinIUserSid); \
-F(WinBuiltinCryptoOperatorsSid); \
-F(WinUntrustedLabelSid); \
-F(WinLowLabelSid); \
-F(WinMediumLabelSid); \
-F(WinHighLabelSid); \
-F(WinSystemLabelSid); \
-F(WinWriteRestrictedCodeSid); \
-F(WinCreatorOwnerRightsSid); \
-F(WinCacheablePrincipalsGroupSid); \
-F(WinNonCacheablePrincipalsGroupSid); \
-F(WinEnterpriseReadonlyControllersSid); \
-F(WinAccountReadonlyControllersSid); \
-F(WinBuiltinEventLogReadersGroup); \
-F(WinNewEnterpriseReadonlyControllersSid); \
-F(WinBuiltinCertSvcDComAccessGroup); \
-F(WinMediumPlusLabelSid); \
-F(WinLocalLogonSid); \
-F(WinConsoleLogonSid); \
-F(WinThisOrganizationCertificateSid); \
-F(WinApplicationPackageAuthoritySid); \
-F(WinBuiltinAnyPackageSid); \
-F(WinCapabilityInternetClientSid); \
-F(WinCapabilityInternetClientServerSid); \
-F(WinCapabilityPrivateNetworkClientServerSid); \
-F(WinCapabilityPicturesLibrarySid); \
-F(WinCapabilityVideosLibrarySid); \
-F(WinCapabilityMusicLibrarySid); \
-F(WinCapabilityDocumentsLibrarySid); \
-F(WinCapabilitySharedUserCertificatesSid); \
-F(WinCapabilityEnterpriseAuthenticationSid); \
-F(WinCapabilityRemovableStorageSid); \
-F(WinBuiltinRDSRemoteAccessServersSid); \
-F(WinBuiltinRDSEndpointServersSid); \
-F(WinBuiltinRDSManagementServersSid); \
-F(WinUserModeDriversSid); \
-F(WinBuiltinHyperVAdminsSid); \
-F(WinAccountCloneableControllersSid); \
-F(WinBuiltinAccessControlAssistanceOperatorsSid); \
-F(WinBuiltinRemoteManagementUsersSid); \
-F(WinAuthenticationAuthorityAssertedSid); \
-F(WinAuthenticationServiceAssertedSid); \
-F(WinLocalAccountSid); \
-F(WinLocalAccountAndAdministratorSid); \
-F(WinAccountProtectedUsersSid); \
-F(WinCapabilityAppointmentsSid); \
-F(WinCapabilityContactsSid); \
-F(WinAccountDefaultSystemManagedSid); \
-F(WinBuiltinDefaultSystemManagedGroupSid); \
-F(WinBuiltinStorageReplicaAdminsSid); \
-F(WinAccountKeyAdminsSid); \
-F(WinAccountEnterpriseKeyAdminsSid); \
-F(WinAuthenticationKeyTrustSid); \
-F(WinAuthenticationKeyPropertyMFASid); \
-F(WinAuthenticationKeyPropertyAttestationSid); \
-F(WinAuthenticationFreshKeyAuthSid); \
-F(WinBuiltinDeviceOwnersSid);
-
-bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring& strType)
-{
-#define RETURN_IF_IS_WELL_KNOWN_TYPE(x) \
-    if (IsWellKnownSid(sid, (x))) \
-    { \
-        type = x; \
-        strType = L#x; \
-        return true; \
-    }
-
-    CALL_FUNC_ON_WELL_KNOWN_SIDS(RETURN_IF_IS_WELL_KNOWN_TYPE);
-
-#undef RETURN_IF_IS_WELL_KNOWN_TYPE
-
-    return false;
-}
-
-class Sid
-{
-private:
-    PSID _sid;
-    DeleterType _deleter;
-    LPWSTR _str;
-    WELL_KNOWN_SID_TYPE _type;
-    std::wstring _strType;
-    bool _typeChecked;
-    bool _isWellKnown;
-
-    void CheckWellKnownSidType()
-    {
-        if (!_typeChecked)
-        {
-            _isWellKnown = GetWellKnownSidType(_sid, _type, _strType);
-            _typeChecked = true;
-        }
-    }
-
-public:
-    Sid(PSID sid, DeleterType deleter = DeleterType::None)
-        : _sid(sid), _deleter(deleter), _str(nullptr), _type(WinNullSid), _typeChecked(false), _isWellKnown(false)
-    {}
-
-    Sid() : Sid(nullptr) {}
-
-    ~Sid()
-    {
-        Free();
-    }
-
-    PSID& Get() { return _sid; }
-
-    void SetDeleterType(DeleterType deleter)
-    {
-        _deleter = deleter;
-    }
-
-    void Attach(PSID sid, DeleterType deleter = DeleterType::None)
-    {
-        if (_sid != sid)
-        {
-            Free();
-            _sid = sid;
-            _deleter = deleter;
-        }
-    }
-
-    std::wstring Str()
-    {
-        DWORD error = ERROR_SUCCESS;
-
-        if (_str == nullptr)
-        {
-            if (!ConvertSidToStringSidW(_sid, &_str))
-            {
-                error = GetLastError();
-                std::wcerr << L"ConvertSidToStringSidW(0x" << std::hex << _sid << std::dec << L") failed, error=" << error << std::endl;
-            }
-        }
-
-        return std::wstring(_str);
-    }
-
-    bool IsWellKnown()
-    {
-        CheckWellKnownSidType();
-        return _isWellKnown;
-    }
-
-    WELL_KNOWN_SID_TYPE WellKnownSidType()
-    {
-        CheckWellKnownSidType();
-        return _type;
-    }
-
-    std::wstring WellKnownSidTypeString()
-    {
-        CheckWellKnownSidType();
-        return _strType;
-    }
-
-    DWORD Free()
-    {
-        DWORD error = ERROR_SUCCESS;
-
-        if (_sid != nullptr)
-        {
-            switch (_deleter)
-            {
-            case DeleterType::DeleteByteArray:
-                delete[] _sid;
-                break;
-            case DeleterType::UseFreeSid:
-                if (::FreeSid(_sid) != nullptr)
-                {
-                    error = GetLastError();
-                    RETURN_FAILURE(error);
-                }
-                break;
-            case DeleterType::UseLocalFree:
-                if (::LocalFree(_sid) != nullptr)
-                {
-                    error = GetLastError();
-                    RETURN_FAILURE(error);
-                }
-                break;
-            default:
-                break;
-            }
-
-            _sid = nullptr;
-            _deleter = DeleterType::None;
-        }
-
-        if (_str != nullptr)
-        {
-            if (LocalFree(_str) != nullptr)
-            {
-                error = GetLastError();
-                RETURN_FAILURE(error);
-            }
-
-            _str = nullptr;
-        }
-
-        _type = WinNullSid;
-        _strType.clear();
-        _typeChecked = false;
-        _isWellKnown = false;
-
-        return error;
-    }
-
-    void Print()
-    {
-        std::wcout << Str() << L"[IsWellKnown=" << IsWellKnown();
-        if (_isWellKnown)
-        {
-            std::wcout << L"|Type=" << _type << L"|" << _strType;
-        }
-        std::wcout << L"]" << std::endl;
-    }
-};
-
 DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nullptr)
 {
     DWORD error = ERROR_SUCCESS;
     std::unique_ptr<byte[]> psid;
     DWORD size = 0;
 
-    if (CreateWellKnownSid(type, domainSid, nullptr, &size))
+    if (::CreateWellKnownSid(type, domainSid, nullptr, &size))
     {
         error = ERROR_BAD_ARGUMENTS;
         RETURN_FAILURE(error);
@@ -925,13 +868,13 @@ DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nu
 
     psid.reset(new byte[size]);
 
-    if (!CreateWellKnownSid(type, domainSid, psid.get(), &size))
+    if (!::CreateWellKnownSid(type, domainSid, psid.get(), &size))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
     }
 
-    sid.Attach(static_cast<PSID>(psid.get()), DeleterType::DeleteByteArray);
+    sid.Attach(static_cast<PSID>(psid.get()), AllocType::UseNewByteArray);
     psid.release();
 
     return error;
@@ -953,7 +896,7 @@ DWORD CreateSid(
     DWORD error = ERROR_SUCCESS;
     PSID psid = nullptr;
 
-    if (!AllocateAndInitializeSid(
+    if (!::AllocateAndInitializeSid(
         const_cast<PSID_IDENTIFIER_AUTHORITY>(&authority),
         subAuthorityCount,
         subAuthority0,
@@ -970,7 +913,7 @@ DWORD CreateSid(
         RETURN_FAILURE(error);
     }
 
-    sid.Attach(psid, DeleterType::UseFreeSid);
+    sid.Attach(psid, AllocType::UseAllocateAndInitializeSid);
     return error;
 }
 
@@ -2291,7 +2234,7 @@ DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t* argv[])
             RETURN_FAILURE(error);
         }
 
-        sid.Attach(psid, DeleterType::UseLocalFree);
+        sid.Attach(psid, AllocType::UseLocalAlloc);
 
         error = SetTokenUser(tokenHandle, psid);
     }

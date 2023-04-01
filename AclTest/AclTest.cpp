@@ -233,11 +233,16 @@ public:
         return _pointer == pointer;
     }
 
+    bool operator!=(T* pointer)
+    {
+        return _pointer != pointer;
+    }
+
     T*& operator->() { return _pointer; }
 
     template<typename X = T>
     typename std::enable_if<!std::is_void<X>::value>::type&
-    operator*() { return *_pointer; }
+        operator*() { return *_pointer; }
 
     virtual DWORD Alloc(size_t byteCount)
     {
@@ -288,6 +293,11 @@ public:
 
             }
             break;
+            case AllocType::UseAllocateAndInitializeSid:
+            {
+                error = ERROR_NOT_SUPPORTED;
+            }
+            break;
             default:
                 break;
             }
@@ -305,7 +315,7 @@ public:
             switch (_allocType)
             {
             case AllocType::UseNewByteArray:
-                delete[] (byte*)(_pointer);
+                delete[](byte*)(_pointer);
                 break;
             case AllocType::UseHeapAlloc:
                 if (!::HeapFree(GetProcessHeap(), 0, static_cast<LPVOID>(_pointer)))
@@ -577,8 +587,13 @@ public:
         return error;
     }
 
-    Pointer<TOKEN_USER>& User()
+    Pointer<TOKEN_USER>& User(bool refresh = false)
     {
+        if (_user != nullptr && refresh)
+        {
+            _user.Free();
+        }
+
         if (_user == nullptr)
         {
             DWORD error = ERROR_SUCCESS;
@@ -617,7 +632,7 @@ DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
     DWORD error = ERROR_SUCCESS;
     DWORD length = 0;
 
-    if (LookupPrivilegeNameW(nullptr, luid, nullptr, &length))
+    if (::LookupPrivilegeNameW(nullptr, luid, nullptr, &length))
     {
         std::wcerr << L"LookupPrivilegeName succeeded unexpectedly, length " << length << std::endl;
         error = ERROR_BAD_ARGUMENTS;
@@ -634,7 +649,7 @@ DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
 
     luidName.resize(length);
 
-    if (!LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t*>(luidName.c_str()), &length))
+    if (!::LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t*>(luidName.c_str()), &length))
     {
         error = GetLastError();
         std::wcerr << L"LookupPrivilegeName failed with error " << error << std::endl;
@@ -2171,28 +2186,6 @@ DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
     return error;
 }
 
-DWORD PrintTokenUser(HANDLE tokenHandle)
-{
-    DWORD error = ERROR_SUCCESS;
-    std::unique_ptr<byte[]> buffer;
-    PTOKEN_USER user;
-
-    error = GetTokenInformation(tokenHandle, TokenUser, buffer);
-
-    if (error == ERROR_SUCCESS)
-    {
-        user = (PTOKEN_USER)buffer.get();
-        std::wcout << L"TokenUser:" << std::endl;
-        PrintSidAndAttributes(user->User);
-    }
-    else
-    {
-        std::wcout << L"Failed to get TokenUser info, error " << error << std::endl;
-    }
-
-    return error;
-}
-
 DWORD SetTokenUser(HANDLE tokenHandle, const PSID sid)
 {
     DWORD error = ERROR_SUCCESS;
@@ -2290,15 +2283,59 @@ public:
         return HasNext() ? std::wstring(_argv[_index++]) : L"";
     }
 
+    int RemainingArgCount() const
+    {
+        return _argc - _index;
+    }
+
+    wchar_t** RemainingArgs() const
+    {
+        return &_argv[_index];
+    }
+
     Arg Rest()
     {
         return Arg(_argc - _index, &_argv[_index], 0);
     }
 };
 
-DWORD TokenMain(int argc, wchar_t* argv[])
+DWORD ProcessTokenMain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
+    Arg arg(argc, argv);
+
+    ProcessToken processToken;
+    ProcessToken duplicateToken;
+
+    error = processToken.Open();
+    RETURN_IF_FAILED(error);
+
+    std::wcout << L"Duplicate process token =======>" << std::endl;
+    error = processToken.Duplicate(&duplicateToken.Get());
+    RETURN_IF_FAILED(error);
+
+    error = SetTokenPrivileges(duplicateToken.Get());
+    RETURN_IF_FAILED(error);
+
+    std::wcout << L"Process token privileges =======>" << std::endl;
+    PrintTokenPrivileges(processToken.Get());
+
+    std::wcout << L"Duplicate token privileges =======>" << std::endl;
+    PrintTokenPrivileges(duplicateToken.Get());
+
+    std::wcout << L"Process token user =======>" << std::endl;
+    PrintSidAndAttributes(processToken.User()->User);
+
+    std::wcout << L"Duplicate token user =======>" << std::endl;
+    PrintSidAndAttributes(duplicateToken.User()->User);
+
+    return error;
+}
+
+DWORD ThreadTokenMain(int argc, wchar_t* argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+    Arg arg(argc, argv);
 
     Impersonator impersonator;
     error = impersonator.BeginImpersonateSelf();
@@ -2324,27 +2361,27 @@ DWORD TokenMain(int argc, wchar_t* argv[])
     PrintTokenPrivileges(duplicateToken.Get());
 
     std::wcout << L"Thread token user =======>" << std::endl;
-    PrintTokenUser(threadToken.Get());
+    PrintSidAndAttributes(threadToken.User()->User);
     std::wcout << L"Duplicate token user =======>" << std::endl;
-    PrintTokenUser(duplicateToken.Get());
+    PrintSidAndAttributes(duplicateToken.User()->User);
 
-    if (argc > 0)
+    if (arg.HasNext())
     {
         int argIndex = 0;
-        std::wstring command(argv[argIndex++]);
+        std::wstring command(arg.Next());
 
         if (command == L"user")
         {
-            if (argc < argIndex + 1)
+            if (!arg.HasNext())
             {
                 RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
             }
 
-            error = SetTokenUser(duplicateToken.Get(), argc - argIndex, &argv[argIndex]);
+            error = SetTokenUser(duplicateToken.Get(), arg.RemainingArgCount(), arg.RemainingArgs());
             RETURN_IF_FAILED(error);
 
             std::wcout << L"Duplicate token user =======>" << std::endl;
-            PrintTokenUser(duplicateToken.Get());
+            PrintSidAndAttributes(duplicateToken.User(true)->User);
         }
         else
         {
@@ -2437,9 +2474,10 @@ DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
 void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
-    std::wcout << argv[0] << L" token" << std::endl;
-    std::wcout << argv[0] << L" token user <subauthority0> <subauthority1> ..." << std::endl;
-    std::wcout << argv[0] << L" token user <sid>" << std::endl;
+    std::wcout << argv[0] << L" processtoken" << std::endl;
+    std::wcout << argv[0] << L" threadtoken" << std::endl;
+    std::wcout << argv[0] << L" threadtoken user <subauthority0> <subauthority1> ..." << std::endl;
+    std::wcout << argv[0] << L" threadtoken user <sid>" << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
     std::wcout << argv[0] << L" sid" << std::endl;
@@ -2463,9 +2501,13 @@ int wmain(int argc, wchar_t* argv[])
 
     std::wstring command(argv[argIndex++]);
 
-    if (command == L"token")
+    if (command == L"processtoken")
     {
-        error = TokenMain(argc - argIndex, &argv[argIndex]);
+        error = ProcessTokenMain(argc - argIndex, &argv[argIndex]);
+    }
+    else if (command == L"threadtoken")
+    {
+        error = ThreadTokenMain(argc - argIndex, &argv[argIndex]);
     }
     else if (command == L"file")
     {

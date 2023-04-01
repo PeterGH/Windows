@@ -22,7 +22,29 @@
         return e2; \
     }
 
-enum DeleterType
+DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD infoLength = 0;
+
+    if (::GetTokenInformation(tokenHandle, infoClass, nullptr, 0, &infoLength))
+    {
+        std::wcerr << L"GetTokenInformation succeeded unexpectedly, infoLength " << infoLength << std::endl;
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    info.reset(new byte[infoLength]);
+
+    if (!::GetTokenInformation(tokenHandle, infoClass, info.get(), infoLength, &infoLength))
+    {
+        error = GetLastError();
+        std::wcerr << L"GetTokenInformation(0x" << std::hex << tokenHandle << std::dec << L", " << infoClass << L") failed with error " << error << std::endl;
+    }
+
+    return error;
+}
+
+enum class DeleterType
 {
     None = 0,
     DeleteByteArray,
@@ -31,15 +53,23 @@ enum DeleterType
     UseHeapFree
 };
 
+enum class AllocType
+{
+    None = 0,
+    UseNewByteArray,
+    UseHeapAlloc,
+    UseLocalAlloc
+};
+
 template<class T> class Pointer
 {
 private:
     T* _pointer;
-    DeleterType _deleterType;
+    AllocType _allocType;
 
 public:
-    Pointer(T* pointer = nullptr, DeleterType deleterType = DeleterType::None)
-        : _pointer(pointer), _deleterType(deleterType)
+    Pointer(T* pointer = nullptr, AllocType allocType = AllocType::None)
+        : _pointer(pointer), _allocType(allocType)
     {}
 
     virtual ~Pointer()
@@ -47,16 +77,18 @@ public:
         Free();
     }
 
-    void SetDeleterType(DeleterType deleterType)
+    T*& Get() { return _pointer; }
+
+    void SetAllocType(AllocType allocType)
     {
-        _deleterType = deleterType;
+        _allocType = allocType;
     }
 
-    void Attach(T* pointer, DeleterType deleterType = DeleterType::None)
+    void Attach(T* pointer, AllocType allocType = AllocType::None)
     {
         Free();
         _pointer = pointer;
-        _deleterType = deleterType;
+        _allocType = allocType;
     }
 
     Pointer& operator=(T* pointer)
@@ -65,68 +97,292 @@ public:
         return *this;
     }
 
-    DWORD Free()
+    bool operator==(T* pointer)
+    {
+        return _pointer == pointer;
+    }
+
+    virtual DWORD Alloc(size_t byteCount)
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_pointer == nullptr)
+        {
+            switch (_allocType)
+            {
+            case AllocType::UseNewByteArray:
+            {
+                byte* p = new byte[byteCount];
+                if (p == nullptr)
+                {
+                    error = ERROR_NOT_ENOUGH_MEMORY;
+                }
+                else
+                {
+                    _pointer = (T*)(p);
+                }
+            }
+            break;
+            case AllocType::UseHeapAlloc:
+            {
+                LPVOID p = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, byteCount);
+                if (p == nullptr)
+                {
+                    // HeapAlloc does not call SetLastError() on failures
+                    error = ERROR_NOT_ENOUGH_MEMORY;
+                }
+                else
+                {
+                    _pointer = static_cast<T*>(p);
+                }
+            }
+            break;
+            case AllocType::UseLocalAlloc:
+            {
+                HLOCAL p = LocalAlloc(LPTR, byteCount);
+                if (p == nullptr)
+                {
+                    error = GetLastError();
+                }
+                else
+                {
+                    _pointer = static_cast<T*>(p);
+                }
+
+            }
+            break;
+            default:
+                break;
+            }
+        }
+
+        return error;
+    }
+
+    virtual DWORD Free()
     {
         DWORD error = ERROR_SUCCESS;
 
         if (_pointer != nullptr)
         {
-            switch (_deleterType)
+            switch (_allocType)
             {
-            case DeleterType::DeleteByteArray:
-                delete[] static_cast<byte*>(_pointer);
+            case AllocType::UseNewByteArray:
+                delete[] (byte*)(_pointer);
                 break;
-            case DeleterType::UseFreeSid:
-                if (::FreeSid(_pointer) != nullptr)
+            case AllocType::UseHeapAlloc:
+                if (!::HeapFree(GetProcessHeap(), 0, static_cast<LPVOID>(_pointer)))
                 {
                     error = GetLastError();
                 }
                 break;
-            case DeleterType::UseLocalFree:
+            case AllocType::UseLocalAlloc:
                 if (::LocalFree(_pointer) != nullptr)
                 {
                     error = GetLastError();
                 }
                 break;
-            case DeleterType::UseHeapFree:
-                if (!::HeapFree(GetProcessHeap(), 0, static_cast<LPVOID>(_pointer)))
-                {
-                    error = GetLastError();
-                }
             default:
                 break;
             }
 
             RETURN_IF_FAILED(error);
             _pointer = nullptr;
-            _deleterType = DeleterType::None;
+            _allocType = AllocType::None;
         }
 
         return error;
     }
 };
 
-DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
+class Handle
 {
-    DWORD error = ERROR_SUCCESS;
-    DWORD infoLength = 0;
+protected:
+    HANDLE _handle;
 
-    if (GetTokenInformation(tokenHandle, infoClass, nullptr, 0, &infoLength))
+public:
+    Handle(HANDLE handle) : _handle(handle) {}
+    Handle() : Handle(INVALID_HANDLE_VALUE) {}
+
+    virtual ~Handle()
     {
-        std::wcerr << L"GetTokenInformation succeeded unexpectedly, infoLength " << infoLength << std::endl;
-        return ERROR_BAD_ARGUMENTS;
+        Close();
     }
 
-    info.reset(new byte[infoLength]);
+    HANDLE& Get() { return _handle; }
 
-    if (!GetTokenInformation(tokenHandle, infoClass, info.get(), infoLength, &infoLength))
+    HANDLE Release()
     {
-        error = GetLastError();
-        std::wcerr << L"GetTokenInformation(0x" << std::hex << tokenHandle << std::dec << L", " << infoClass << L") failed with error " << error << std::endl;
+        HANDLE copy = _handle;
+        _handle = INVALID_HANDLE_VALUE;
+        return copy;
     }
 
-    return error;
-}
+    void Attach(HANDLE handle)
+    {
+        if (_handle != INVALID_HANDLE_VALUE)
+        {
+            Close();
+        }
+
+        _handle = handle;
+    }
+
+    Handle& operator=(HANDLE handle)
+    {
+        Attach(handle);
+        return *this;
+    }
+
+    bool operator==(HANDLE handle)
+    {
+        return _handle == handle;
+    }
+
+    DWORD Close()
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_handle == INVALID_HANDLE_VALUE)
+        {
+            return error;
+        }
+
+        if (CloseHandle(_handle))
+        {
+            std::wcout << L"Closed handle 0x" << std::hex << _handle << std::dec << std::endl;
+            _handle = INVALID_HANDLE_VALUE;
+        }
+        else
+        {
+            error = GetLastError();
+            std::wcerr << L"Failed to close handle 0x" << std::hex << _handle << std::dec << std::endl;
+        }
+
+        return error;
+    }
+};
+
+class Token : public Handle
+{
+private:
+    bool _isThreadToken;
+    std::wstring _type;
+    Pointer<TOKEN_USER> _user;
+
+public:
+
+    Token(HANDLE tokenHandle = INVALID_HANDLE_VALUE, bool isThreadToken = false)
+        : Handle(tokenHandle),
+        _isThreadToken(isThreadToken)
+    {
+        _type = _isThreadToken ? L"thread" : L"process";
+    }
+
+    DWORD Open()
+    {
+        DWORD error = ERROR_SUCCESS;
+        BOOL success;
+
+        if (_handle == INVALID_HANDLE_VALUE)
+        {
+            if (_isThreadToken)
+            {
+                success = OpenThreadToken(
+                    GetCurrentThread(),
+                    TOKEN_ALL_ACCESS,
+                    TRUE,
+                    &_handle);
+            }
+            else
+            {
+                success = OpenProcessToken(
+                    GetCurrentProcess(),
+                    TOKEN_ALL_ACCESS,
+                    &_handle);
+            }
+
+            if (success)
+            {
+                std::wcout << L"Opened " << _type << L" token 0x" << std::hex << _handle << std::dec << std::endl;
+            }
+            else
+            {
+                error = GetLastError();
+                std::wcerr << L"Failed to open " << _type << L" token." << std::endl;
+            }
+        }
+        else
+        {
+            std::wcout << L"Already opened " << _type << L" token 0x" << std::hex << _handle << std::dec << std::endl;
+        }
+
+        return error;
+    }
+
+    DWORD Duplicate(
+        PHANDLE duplicateTokenHandle,
+        SECURITY_IMPERSONATION_LEVEL impersonationLevel = SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
+        TOKEN_TYPE tokenType = TOKEN_TYPE::TokenImpersonation)
+    {
+        DWORD error = ERROR_SUCCESS;
+
+        if (_handle == INVALID_HANDLE_VALUE)
+        {
+            error = Open();
+            RETURN_IF_FAILED(error);
+        }
+
+        // Cannot use DuplicateToken because its output token handle has only TOKEN_IMPERSONATE and TOKEN_QUERY access, so cannot adjust its privileges
+        if (!DuplicateTokenEx(
+            _handle,
+            TOKEN_ALL_ACCESS,
+            NULL,
+            impersonationLevel,
+            tokenType,
+            duplicateTokenHandle))
+        {
+            error = GetLastError();
+            RETURN_FAILURE(error);
+        }
+
+        return error;
+    }
+
+    Pointer<TOKEN_USER>& User()
+    {
+        if (_user == nullptr)
+        {
+            DWORD error = ERROR_SUCCESS;
+            std::unique_ptr<byte[]> buffer;
+
+            error = Open();
+            if (error == ERROR_SUCCESS)
+            {
+                error = GetTokenInformation(_handle, TokenUser, buffer);
+                if (error == ERROR_SUCCESS)
+                {
+                    _user.Attach((PTOKEN_USER)buffer.get(), AllocType::UseNewByteArray);
+                    buffer.release();
+                }
+            }
+        }
+
+        return _user;
+    }
+};
+
+class ThreadToken : public Token
+{
+public:
+    ThreadToken() : Token(INVALID_HANDLE_VALUE, true) {}
+};
+
+class ProcessToken : public Token
+{
+public:
+    ProcessToken() : Token(INVALID_HANDLE_VALUE, false) {}
+};
 
 DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
 {
@@ -333,172 +589,6 @@ public:
 
         return error;
     }
-};
-
-class Handle
-{
-protected:
-    HANDLE _handle;
-
-public:
-    Handle(HANDLE handle) : _handle(handle) {}
-    Handle() : Handle(INVALID_HANDLE_VALUE) {}
-
-    virtual ~Handle()
-    {
-        Close();
-    }
-
-    HANDLE& Get() { return _handle; }
-
-    HANDLE Release()
-    {
-        HANDLE copy = _handle;
-        _handle = INVALID_HANDLE_VALUE;
-        return copy;
-    }
-
-    void Attach(HANDLE handle)
-    {
-        if (_handle != INVALID_HANDLE_VALUE)
-        {
-            Close();
-        }
-
-        _handle = handle;
-    }
-
-    Handle& operator=(HANDLE handle)
-    {
-        Attach(handle);
-        return *this;
-    }
-
-    bool operator==(HANDLE handle)
-    {
-        return _handle == handle;
-    }
-
-    DWORD Close()
-    {
-        DWORD error = ERROR_SUCCESS;
-
-        if (_handle == INVALID_HANDLE_VALUE)
-        {
-            return error;
-        }
-
-        if (CloseHandle(_handle))
-        {
-            std::wcout << L"Closed handle 0x" << std::hex << _handle << std::dec << std::endl;
-            _handle = INVALID_HANDLE_VALUE;
-        }
-        else
-        {
-            error = GetLastError();
-            std::wcerr << L"Failed to close handle 0x" << std::hex << _handle << std::dec << std::endl;
-        }
-
-        return error;
-    }
-};
-
-class Token : public Handle
-{
-private:
-    bool _isThreadToken;
-    std::wstring _type;
-
-public:
-
-    Token(HANDLE tokenHandle = INVALID_HANDLE_VALUE, bool isThreadToken = false)
-        : Handle(tokenHandle),
-        _isThreadToken(isThreadToken)
-    {
-        _type = _isThreadToken ? L"thread" : L"process";
-    }
-
-    DWORD Open()
-    {
-        DWORD error = ERROR_SUCCESS;
-        BOOL success;
-
-        if (_handle == INVALID_HANDLE_VALUE)
-        {
-            if (_isThreadToken)
-            {
-                success = OpenThreadToken(
-                    GetCurrentThread(),
-                    TOKEN_ALL_ACCESS,
-                    TRUE,
-                    &_handle);
-            }
-            else
-            {
-                success = OpenProcessToken(
-                    GetCurrentProcess(),
-                    TOKEN_ALL_ACCESS,
-                    &_handle);
-            }
-
-            if (success)
-            {
-                std::wcout << L"Opened " << _type << L" token 0x" << std::hex << _handle << std::dec << std::endl;
-            }
-            else
-            {
-                error = GetLastError();
-                std::wcerr << L"Failed to open " << _type << L" token." << std::endl;
-            }
-        }
-        else
-        {
-            std::wcout << L"Already opened " << _type << L" token 0x" << std::hex << _handle << std::dec << std::endl;
-        }
-
-        return error;
-    }
-
-    DWORD Duplicate(
-        PHANDLE duplicateTokenHandle,
-        SECURITY_IMPERSONATION_LEVEL impersonationLevel = SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation,
-        TOKEN_TYPE tokenType = TOKEN_TYPE::TokenImpersonation)
-    {
-        DWORD error = ERROR_SUCCESS;
-
-        if (_handle == INVALID_HANDLE_VALUE)
-        {
-            error = Open();
-            RETURN_IF_FAILED(error);
-        }
-
-        // Cannot use DuplicateToken because its output token handle has only TOKEN_IMPERSONATE and TOKEN_QUERY access, so cannot adjust its privileges
-        if (!DuplicateTokenEx(
-            _handle,
-            TOKEN_ALL_ACCESS,
-            NULL,
-            impersonationLevel,
-            tokenType,
-            duplicateTokenHandle))
-        {
-            error = GetLastError();
-            RETURN_FAILURE(error);
-        }
-
-        return error;
-    }
-};
-
-class ThreadToken : public Token
-{
-public:
-    ThreadToken() : Token(INVALID_HANDLE_VALUE, true) {}
-};
-
-class ProcessToken : public Token
-{
-public:
-    ProcessToken() : Token(INVALID_HANDLE_VALUE, false) {}
 };
 
 DWORD SetTokenPrivileges(HANDLE tokenHandle)

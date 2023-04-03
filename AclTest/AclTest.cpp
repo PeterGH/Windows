@@ -507,6 +507,7 @@ private:
     bool _isThreadToken;
     std::wstring _type;
     Pointer<TOKEN_USER> _user;
+    Pointer<TOKEN_PRIMARY_GROUP> _primaryGroup;
 
 public:
 
@@ -587,31 +588,48 @@ public:
         return error;
     }
 
-    Pointer<TOKEN_USER>& User(bool refresh = false)
+    template<typename TokenInfo>
+    DWORD GetTokenInformation(TOKEN_INFORMATION_CLASS tokenClass, Pointer<TokenInfo>& tokenInfo, bool refresh = false)
     {
-        if (_user != nullptr && refresh)
+        DWORD error = ERROR_SUCCESS;
+        std::unique_ptr<byte[]> buffer;
+
+        if (tokenInfo != nullptr && refresh)
         {
-            _user.Free();
+            tokenInfo.Free();
         }
 
-        if (_user == nullptr)
+        if (tokenInfo == nullptr)
         {
-            DWORD error = ERROR_SUCCESS;
-            std::unique_ptr<byte[]> buffer;
-
             error = Open();
+            RETURN_IF_FAILED(error);
+
             if (error == ERROR_SUCCESS)
             {
-                error = GetTokenInformation(_handle, TokenUser, buffer);
+                error = ::GetTokenInformation(_handle, tokenClass, buffer);
+                RETURN_IF_FAILED(error);
+
                 if (error == ERROR_SUCCESS)
                 {
-                    _user.Attach((PTOKEN_USER)buffer.get(), AllocType::UseNewByteArray);
+                    tokenInfo.Attach((TokenInfo*)buffer.get(), AllocType::UseNewByteArray);
                     buffer.release();
                 }
             }
         }
 
+        return error;
+    }
+
+    Pointer<TOKEN_USER>& User(bool refresh = false)
+    {
+        GetTokenInformation<TOKEN_USER>(TokenUser, _user, refresh);
         return _user;
+    }
+
+    Pointer<TOKEN_PRIMARY_GROUP>& PrimaryGroup(bool refresh = false)
+    {
+        GetTokenInformation<TOKEN_PRIMARY_GROUP>(TokenPrimaryGroup, _primaryGroup, refresh);
+        return _primaryGroup;
     }
 };
 
@@ -2156,13 +2174,19 @@ DWORD PrintFileSecurityDescriptor(const std::wstring& file)
     return error;
 }
 
-DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
+DWORD PrintSid(const PSID psid)
 {
     DWORD error = ERROR_SUCCESS;
     Sid sid;
-
-    sid.Attach(sa.Sid);
+    sid.Attach(psid);
     sid.Print();
+    return error;
+}
+
+DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
+{
+    DWORD error = ERROR_SUCCESS;
+    PrintSid(sa.Sid);
 
 #define OUT_ATTRIBUTE(x) \
     if (sa.Attributes & (x)) \
@@ -2325,9 +2349,13 @@ DWORD ProcessTokenMain(int argc, wchar_t* argv[])
 
     std::wcout << L"Process token user =======>" << std::endl;
     PrintSidAndAttributes(processToken.User()->User);
+    std::wcout << L"Process token primary group =======>" << std::endl;
+    PrintSid(processToken.PrimaryGroup()->PrimaryGroup);
 
     std::wcout << L"Duplicate token user =======>" << std::endl;
     PrintSidAndAttributes(duplicateToken.User()->User);
+    std::wcout << L"Duplicate token primary group =======>" << std::endl;
+    PrintSid(duplicateToken.PrimaryGroup()->PrimaryGroup);
 
     return error;
 }
@@ -2362,8 +2390,13 @@ DWORD ThreadTokenMain(int argc, wchar_t* argv[])
 
     std::wcout << L"Thread token user =======>" << std::endl;
     PrintSidAndAttributes(threadToken.User()->User);
+    std::wcout << L"Thread token primary group =======>" << std::endl;
+    PrintSid(threadToken.PrimaryGroup()->PrimaryGroup);
+
     std::wcout << L"Duplicate token user =======>" << std::endl;
     PrintSidAndAttributes(duplicateToken.User()->User);
+    std::wcout << L"Duplicate token primary group =======>" << std::endl;
+    PrintSid(duplicateToken.PrimaryGroup()->PrimaryGroup);
 
     if (arg.HasNext())
     {
@@ -2392,13 +2425,28 @@ DWORD ThreadTokenMain(int argc, wchar_t* argv[])
     return error;
 }
 
+const SECURITY_INFORMATION SecurityDescriptorSecurityInformation
+= OWNER_SECURITY_INFORMATION
+| GROUP_SECURITY_INFORMATION
+| DACL_SECURITY_INFORMATION
+| SACL_SECURITY_INFORMATION
+| LABEL_SECURITY_INFORMATION
+| ATTRIBUTE_SECURITY_INFORMATION
+| SCOPE_SECURITY_INFORMATION
+| PROCESS_TRUST_LABEL_SECURITY_INFORMATION
+| ACCESS_FILTER_SECURITY_INFORMATION
+| PROTECTED_DACL_SECURITY_INFORMATION
+| PROTECTED_SACL_SECURITY_INFORMATION
+| UNPROTECTED_DACL_SECURITY_INFORMATION
+| UNPROTECTED_SACL_SECURITY_INFORMATION;
+// BACKUP_SECURITY_INFORMATION
+
 DWORD SecurityDescriptor1()
 {
     DWORD error = ERROR_SUCCESS;
     SECURITY_DESCRIPTOR sd;
-    LPWSTR strDescriptor;
+    Pointer<WCHAR> sdpointer;
     ULONG strLen = 0;
-    SECURITY_INFORMATION si;
 
     if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
     {
@@ -2406,40 +2454,74 @@ DWORD SecurityDescriptor1()
         RETURN_FAILURE(error);
     }
 
-    si = OWNER_SECURITY_INFORMATION
-        | GROUP_SECURITY_INFORMATION
-        | DACL_SECURITY_INFORMATION
-        | SACL_SECURITY_INFORMATION
-        | LABEL_SECURITY_INFORMATION
-        | ATTRIBUTE_SECURITY_INFORMATION
-        | SCOPE_SECURITY_INFORMATION
-        | PROCESS_TRUST_LABEL_SECURITY_INFORMATION
-        | ACCESS_FILTER_SECURITY_INFORMATION
-        | PROTECTED_DACL_SECURITY_INFORMATION
-        | PROTECTED_SACL_SECURITY_INFORMATION
-        | UNPROTECTED_DACL_SECURITY_INFORMATION
-        | UNPROTECTED_SACL_SECURITY_INFORMATION;
-    // BACKUP_SECURITY_INFORMATION
-
-
     if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
         &sd,
         SDDL_REVISION_1,
-        si,
-        &strDescriptor,
+        SecurityDescriptorSecurityInformation,
+        &sdpointer.Get(),
         &strLen))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
     }
 
-    if (strDescriptor == nullptr)
+    if (sdpointer == nullptr)
     {
         RETURN_FAILURE(ERROR_INVALID_SECURITY_DESCR);
     }
 
-    std::wstring securityDescriptor(strDescriptor);
-    LocalFree(strDescriptor);
+    sdpointer.SetAllocType(AllocType::UseLocalAlloc);
+    std::wstring securityDescriptor(sdpointer.Get());
+
+    std::wcout << L"Security Descriptor: [" << securityDescriptor << L"]" << std::endl;
+
+    return error;
+}
+
+DWORD SecurityDescriptor2()
+{
+    DWORD error = ERROR_SUCCESS;
+    SECURITY_DESCRIPTOR sd;
+    Pointer<WCHAR> sdpointer;
+    ULONG strLen = 0;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    ProcessToken processToken;
+    error = processToken.Open();
+    RETURN_IF_FAILED(error);
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        processToken.User()->User.Sid,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        &sd,
+        SDDL_REVISION_1,
+        SecurityDescriptorSecurityInformation,
+        &sdpointer.Get(),
+        &strLen))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (sdpointer == nullptr)
+    {
+        RETURN_FAILURE(ERROR_INVALID_SECURITY_DESCR);
+    }
+
+    sdpointer.SetAllocType(AllocType::UseLocalAlloc);
+    std::wstring securityDescriptor(sdpointer.Get());
 
     std::wcout << L"Security Descriptor: [" << securityDescriptor << L"]" << std::endl;
 
@@ -2465,6 +2547,7 @@ DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
     else
     {
         error = SecurityDescriptor1();
+        error = SecurityDescriptor2();
     }
 
     return error;
@@ -2479,6 +2562,7 @@ void Usage(int argc, wchar_t* argv[])
     std::wcout << argv[0] << L" threadtoken user <subauthority0> <subauthority1> ..." << std::endl;
     std::wcout << argv[0] << L" threadtoken user <sid>" << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;
+    std::wcout << argv[0] << L" sd" << std::endl;
     std::wcout << argv[0] << L" sd <security descriptor>" << std::endl;
     std::wcout << argv[0] << L" sid" << std::endl;
     std::wcout << argv[0] << L" sid wellknown" << std::endl;

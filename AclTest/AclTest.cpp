@@ -22,6 +22,29 @@
         return e2; \
     }
 
+GENERIC_MAPPING FileGenericMapping = {
+    FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE,
+    FILE_GENERIC_EXECUTE,
+    FILE_ALL_ACCESS
+};
+
+const SECURITY_INFORMATION SecurityDescriptorSecurityInformation
+= OWNER_SECURITY_INFORMATION
+| GROUP_SECURITY_INFORMATION
+| DACL_SECURITY_INFORMATION
+| SACL_SECURITY_INFORMATION
+| LABEL_SECURITY_INFORMATION
+| ATTRIBUTE_SECURITY_INFORMATION
+| SCOPE_SECURITY_INFORMATION
+| PROCESS_TRUST_LABEL_SECURITY_INFORMATION
+| ACCESS_FILTER_SECURITY_INFORMATION
+| PROTECTED_DACL_SECURITY_INFORMATION
+| PROTECTED_SACL_SECURITY_INFORMATION
+| UNPROTECTED_DACL_SECURITY_INFORMATION
+| UNPROTECTED_SACL_SECURITY_INFORMATION;
+// BACKUP_SECURITY_INFORMATION
+
 #define CALL_FUNC_ON_WELL_KNOWN_SIDS(F) \
 F(WinNullSid); \
 F(WinWorldSid); \
@@ -180,6 +203,61 @@ DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass,
         std::wcerr << L"GetTokenInformation(0x" << std::hex << tokenHandle << std::dec << L", " << infoClass << L") failed with error " << error << std::endl;
     }
 
+    return error;
+}
+
+DWORD AccessCheck(PSECURITY_DESCRIPTOR securityDescriptor, HANDLE tokenHandle, DWORD desiredAccess = MAXIMUM_ALLOWED)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::unique_ptr<byte[]> privilegeSet;
+    DWORD privilegeSetLength = 0;
+    DWORD grantedAccess = 0;
+    BOOL accessStatus = false;
+
+    if (!::AccessCheck(
+        securityDescriptor,
+        tokenHandle,
+        desiredAccess,
+        &FileGenericMapping,
+        nullptr,
+        &privilegeSetLength,
+        &grantedAccess,
+        &accessStatus) || !accessStatus)
+    {
+        error = GetLastError();
+
+        if (error == ERROR_INSUFFICIENT_BUFFER)
+        {
+            privilegeSet.reset(new byte[privilegeSetLength]);
+
+            if (privilegeSet != nullptr)
+            {
+                if (!::AccessCheck(
+                    securityDescriptor,
+                    tokenHandle,
+                    desiredAccess,
+                    &FileGenericMapping,
+                    (PPRIVILEGE_SET)privilegeSet.get(),
+                    &privilegeSetLength,
+                    &grantedAccess,
+                    &accessStatus) || !accessStatus)
+                {
+                    error = GetLastError();
+                }
+                else
+                {
+                    error = ERROR_SUCCESS;
+                }
+            }
+            else
+            {
+                error = ERROR_OUTOFMEMORY;
+            }
+        }
+    }
+    RETURN_IF_FAILED(error);
+
+    std::wcout << L"Max allowed access is 0x" << std::hex << grantedAccess << std::dec << std::endl;
     return error;
 }
 
@@ -645,6 +723,61 @@ public:
     ProcessToken() : Token(INVALID_HANDLE_VALUE, false) {}
 };
 
+DWORD ConcertSecurityDescriptorToString(PSECURITY_DESCRIPTOR securityDescriptor, std::wstring& securityDescriptorString)
+{
+    DWORD error = ERROR_SUCCESS;
+    Pointer<WCHAR> str;
+    ULONG strLen = 0;
+
+    if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        securityDescriptor,
+        SDDL_REVISION_1,
+        SecurityDescriptorSecurityInformation,
+        &str.Get(),
+        &strLen))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (str == nullptr)
+    {
+        RETURN_FAILURE(ERROR_INVALID_SECURITY_DESCR);
+    }
+
+    str.SetAllocType(AllocType::UseLocalAlloc);
+    securityDescriptorString.assign(str.Get());
+    return error;
+}
+
+void PrintSecurityDescriptor(PSECURITY_DESCRIPTOR securityDescriptor)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wstring securityDescriptorString;
+
+    error = ConcertSecurityDescriptorToString(securityDescriptor, securityDescriptorString);
+
+    if (error == ERROR_SUCCESS)
+    {
+        std::wcout << L"Security Descriptor: [" << securityDescriptorString << L"]" << std::endl;
+    }
+    else
+    {
+        std::wcerr << L"Failed to print security descriptor 0x" << std::hex << securityDescriptor << std::dec << L", error=" << error << std::endl;
+    }
+}
+
+DWORD GetImpersonationToken(ThreadToken& impersonationToken)
+{
+    DWORD error = ERROR_SUCCESS;
+    ProcessToken processToken;
+    error = processToken.Open();
+    RETURN_IF_FAILED(error);
+
+    error = processToken.Duplicate(&impersonationToken.Get());
+    return error;
+}
+
 DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
 {
     DWORD error = ERROR_SUCCESS;
@@ -913,6 +1046,32 @@ DWORD CreateWellKnownSid(WELL_KNOWN_SID_TYPE type, Sid& sid, PSID domainSid = nu
     return error;
 }
 
+DWORD PrintWellKnownSid(WELL_KNOWN_SID_TYPE type, PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    error = CreateWellKnownSid(type, sid, domainSid);
+    RETURN_IF_FAILED(error);
+
+    sid.Print();
+    return error;
+}
+
+DWORD PrintWellKnownSids(PSID domainSid = nullptr)
+{
+    DWORD error = ERROR_SUCCESS;
+
+#define PRINT_WELL_KNOWN_SID(x) \
+    PrintWellKnownSid(x, domainSid);
+
+    CALL_FUNC_ON_WELL_KNOWN_SIDS(PRINT_WELL_KNOWN_SID);
+
+#undef PRINT_WELL_KNOWN_SID
+
+    return error;
+}
+
 DWORD CreateSid(
     Sid& sid,
     const SID_IDENTIFIER_AUTHORITY& authority,
@@ -1009,32 +1168,6 @@ DWORD CreateRandomSid(
         subAuthority6,
         subAuthority7);
     RETURN_IF_FAILED(error);
-    return error;
-}
-
-DWORD PrintWellKnownSid(WELL_KNOWN_SID_TYPE type, PSID domainSid = nullptr)
-{
-    DWORD error = ERROR_SUCCESS;
-    Sid sid;
-
-    error = CreateWellKnownSid(type, sid, domainSid);
-    RETURN_IF_FAILED(error);
-
-    sid.Print();
-    return error;
-}
-
-DWORD PrintWellKnownSids(PSID domainSid = nullptr)
-{
-    DWORD error = ERROR_SUCCESS;
-
-#define PRINT_WELL_KNOWN_SID(x) \
-    PrintWellKnownSid(x, domainSid);
-
-    CALL_FUNC_ON_WELL_KNOWN_SIDS(PRINT_WELL_KNOWN_SID);
-
-#undef PRINT_WELL_KNOWN_SID
-
     return error;
 }
 
@@ -1888,8 +2021,6 @@ public:
     std::wstring Str()
     {
         DWORD error = ERROR_SUCCESS;
-        LPWSTR pstr = NULL;
-        ULONG length = 0;
         std::wstring strSecurityDescriptor;
 
         if (_pSecurityDescriptor == NULL)
@@ -1897,24 +2028,11 @@ public:
             return strSecurityDescriptor;
         }
 
-        if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
-            _pSecurityDescriptor,
-            SDDL_REVISION_1,
-            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION,
-            &pstr,
-            &length))
-        {
-            error = GetLastError();
-            std::wcerr << L"Failed to convert security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << L" to string format, error=" << error << std::endl;
-            return strSecurityDescriptor;
-        }
+        error = ConcertSecurityDescriptorToString(_pSecurityDescriptor, strSecurityDescriptor);
 
-        strSecurityDescriptor.assign(pstr, length);
-
-        if (LocalFree(pstr) != NULL)
+        if (error != ERROR_SUCCESS)
         {
-            error = GetLastError();
-            std::wcerr << L"Failed to free string security descriptor 0x" << std::hex << pstr << std::dec << std::endl;
+            std::wcerr << L"Failed to convert security descriptor 0x" << std::hex << _pSecurityDescriptor << std::dec << L" to string, error=" << error << std::endl;
         }
 
         return strSecurityDescriptor;
@@ -2425,106 +2543,225 @@ DWORD ThreadTokenMain(int argc, wchar_t* argv[])
     return error;
 }
 
-const SECURITY_INFORMATION SecurityDescriptorSecurityInformation
-= OWNER_SECURITY_INFORMATION
-| GROUP_SECURITY_INFORMATION
-| DACL_SECURITY_INFORMATION
-| SACL_SECURITY_INFORMATION
-| LABEL_SECURITY_INFORMATION
-| ATTRIBUTE_SECURITY_INFORMATION
-| SCOPE_SECURITY_INFORMATION
-| PROCESS_TRUST_LABEL_SECURITY_INFORMATION
-| ACCESS_FILTER_SECURITY_INFORMATION
-| PROTECTED_DACL_SECURITY_INFORMATION
-| PROTECTED_SACL_SECURITY_INFORMATION
-| UNPROTECTED_DACL_SECURITY_INFORMATION
-| UNPROTECTED_SACL_SECURITY_INFORMATION;
-// BACKUP_SECURITY_INFORMATION
-
 DWORD SecurityDescriptor1()
 {
     DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
     SECURITY_DESCRIPTOR sd;
-    Pointer<WCHAR> sdpointer;
-    ULONG strLen = 0;
 
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor without owner, group, dacl or sacl
     if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
     }
 
-    if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
-        &sd,
-        SDDL_REVISION_1,
-        SecurityDescriptorSecurityInformation,
-        &sdpointer.Get(),
-        &strLen))
-    {
-        error = GetLastError();
-        RETURN_FAILURE(error);
-    }
-
-    if (sdpointer == nullptr)
-    {
-        RETURN_FAILURE(ERROR_INVALID_SECURITY_DESCR);
-    }
-
-    sdpointer.SetAllocType(AllocType::UseLocalAlloc);
-    std::wstring securityDescriptor(sdpointer.Get());
-
-    std::wcout << L"Security Descriptor: [" << securityDescriptor << L"]" << std::endl;
-
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
     return error;
 }
 
 DWORD SecurityDescriptor2()
 {
     DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
     SECURITY_DESCRIPTOR sd;
-    Pointer<WCHAR> sdpointer;
-    ULONG strLen = 0;
 
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with a non-defaulted owner
     if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
     }
 
-    ProcessToken processToken;
-    error = processToken.Open();
-    RETURN_IF_FAILED(error);
-
     if (!SetSecurityDescriptorOwner(
         &sd,
-        processToken.User()->User.Sid,
+        impersonationToken.User()->User.Sid,
         false))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
     }
 
-    if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
-        &sd,
-        SDDL_REVISION_1,
-        SecurityDescriptorSecurityInformation,
-        &sdpointer.Get(),
-        &strLen))
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor3()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with a defaulted owner
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
     {
         error = GetLastError();
         RETURN_FAILURE(error);
     }
 
-    if (sdpointer == nullptr)
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        impersonationToken.User()->User.Sid,
+        true))
     {
-        RETURN_FAILURE(ERROR_INVALID_SECURITY_DESCR);
+        error = GetLastError();
+        RETURN_FAILURE(error);
     }
 
-    sdpointer.SetAllocType(AllocType::UseLocalAlloc);
-    std::wstring securityDescriptor(sdpointer.Get());
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
 
-    std::wcout << L"Security Descriptor: [" << securityDescriptor << L"]" << std::endl;
+DWORD SecurityDescriptor4()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
 
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with a non-defaulted group
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        impersonationToken.PrimaryGroup()->PrimaryGroup,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor5()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with a defaulted group
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        impersonationToken.PrimaryGroup()->PrimaryGroup,
+        true))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor6()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with a non-defaulted owner and a non-defaulted group
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        impersonationToken.User()->User.Sid,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        impersonationToken.PrimaryGroup()->PrimaryGroup,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor7()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+    Sid sid;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with a system owner and a system group
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    CreateWellKnownSid(WELL_KNOWN_SID_TYPE::WinLocalSystemSid, sid);
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
     return error;
 }
 
@@ -2546,8 +2783,13 @@ DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
     }
     else
     {
-        error = SecurityDescriptor1();
-        error = SecurityDescriptor2();
+        SecurityDescriptor1();
+        SecurityDescriptor2();
+        SecurityDescriptor3();
+        SecurityDescriptor4();
+        SecurityDescriptor5();
+        SecurityDescriptor6();
+        SecurityDescriptor7();
     }
 
     return error;

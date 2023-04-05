@@ -184,6 +184,83 @@ bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring
     return false;
 }
 
+DWORD SetSid(
+    PSID sid,
+    const SID_IDENTIFIER_AUTHORITY& authority,
+    BYTE subAuthorityCount = 0,
+    DWORD subAuthority0 = 0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD index = 0;
+    PDWORD subAuthority = nullptr;
+
+    if (!InitializeSid(sid, const_cast<PSID_IDENTIFIER_AUTHORITY>(&authority), subAuthorityCount))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+#define SET_SUB_AUTHORITY(x) \
+    if (index < subAuthorityCount) \
+    { \
+        subAuthority = GetSidSubAuthority(sid, index); \
+        *subAuthority = x; \
+    } \
+    index++;
+
+    SET_SUB_AUTHORITY(subAuthority0);
+    SET_SUB_AUTHORITY(subAuthority1);
+    SET_SUB_AUTHORITY(subAuthority2);
+    SET_SUB_AUTHORITY(subAuthority3);
+    SET_SUB_AUTHORITY(subAuthority4);
+    SET_SUB_AUTHORITY(subAuthority5);
+    SET_SUB_AUTHORITY(subAuthority6);
+    SET_SUB_AUTHORITY(subAuthority7);
+
+#undef SET_SUB_AUTHORITY
+
+    return error;
+}
+
+DWORD CreateSid(
+    std::unique_ptr<byte[]>& sid,
+    const SID_IDENTIFIER_AUTHORITY& authority,
+    BYTE subAuthorityCount = 0,
+    DWORD subAuthority0 = 0,
+    DWORD subAuthority1 = 0,
+    DWORD subAuthority2 = 0,
+    DWORD subAuthority3 = 0,
+    DWORD subAuthority4 = 0,
+    DWORD subAuthority5 = 0,
+    DWORD subAuthority6 = 0,
+    DWORD subAuthority7 = 0)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD length = GetSidLengthRequired(subAuthorityCount);
+    sid.reset(new byte[length]);
+    error = SetSid(
+        static_cast<PSID>(sid.get()),
+        authority,
+        subAuthorityCount,
+        subAuthority0,
+        subAuthority1,
+        subAuthority2,
+        subAuthority3,
+        subAuthority4,
+        subAuthority5,
+        subAuthority6,
+        subAuthority7);
+    RETURN_IF_FAILED(error);
+    return error;
+}
+
 DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass, std::unique_ptr<byte[]>& info)
 {
     DWORD error = ERROR_SUCCESS;
@@ -1072,323 +1149,7 @@ DWORD PrintWellKnownSids(PSID domainSid = nullptr)
     return error;
 }
 
-DWORD CreateSid(
-    Sid& sid,
-    const SID_IDENTIFIER_AUTHORITY& authority,
-    BYTE subAuthorityCount,
-    DWORD subAuthority0,
-    DWORD subAuthority1 = 0,
-    DWORD subAuthority2 = 0,
-    DWORD subAuthority3 = 0,
-    DWORD subAuthority4 = 0,
-    DWORD subAuthority5 = 0,
-    DWORD subAuthority6 = 0,
-    DWORD subAuthority7 = 0)
-{
-    DWORD error = ERROR_SUCCESS;
-    PSID psid = nullptr;
-
-    if (!::AllocateAndInitializeSid(
-        const_cast<PSID_IDENTIFIER_AUTHORITY>(&authority),
-        subAuthorityCount,
-        subAuthority0,
-        subAuthority1,
-        subAuthority2,
-        subAuthority3,
-        subAuthority4,
-        subAuthority5,
-        subAuthority6,
-        subAuthority7,
-        &psid))
-    {
-        error = GetLastError();
-        RETURN_FAILURE(error);
-    }
-
-    sid.Attach(psid, AllocType::UseAllocateAndInitializeSid);
-    return error;
-}
-
-DWORD CreateRandomSid(
-    Sid& sid,
-    const SID_IDENTIFIER_AUTHORITY& authority,
-    BYTE subAuthorityCount = 0,
-    DWORD subAuthority0 = 0,
-    DWORD subAuthority1 = 0,
-    DWORD subAuthority2 = 0,
-    DWORD subAuthority3 = 0,
-    DWORD subAuthority4 = 0,
-    DWORD subAuthority5 = 0,
-    DWORD subAuthority6 = 0,
-    DWORD subAuthority7 = 0)
-{
-    DWORD error = ERROR_SUCCESS;
-    BYTE count = 0;
-    const BYTE maxCount = 8;
-
-    if (subAuthorityCount == 0)
-    {
-        subAuthorityCount = rand() % maxCount;
-    }
-
-#define SET_SUB_AUTHORITY(x) \
-    if (count++ < subAuthorityCount) \
-    { \
-        if (x == 0) \
-        { \
-            x = rand(); \
-        } \
-    } \
-    else \
-    { \
-        x = 0; \
-    }
-
-    SET_SUB_AUTHORITY(subAuthority0);
-    SET_SUB_AUTHORITY(subAuthority1);
-    SET_SUB_AUTHORITY(subAuthority2);
-    SET_SUB_AUTHORITY(subAuthority3);
-    SET_SUB_AUTHORITY(subAuthority4);
-    SET_SUB_AUTHORITY(subAuthority5);
-    SET_SUB_AUTHORITY(subAuthority6);
-    SET_SUB_AUTHORITY(subAuthority7);
-
-#undef SET_SUB_AUTHORITY
-
-    error = CreateSid(
-        sid,
-        authority,
-        subAuthorityCount,
-        subAuthority0,
-        subAuthority1,
-        subAuthority2,
-        subAuthority3,
-        subAuthority4,
-        subAuthority5,
-        subAuthority6,
-        subAuthority7);
-    RETURN_IF_FAILED(error);
-    return error;
-}
-
-DWORD PrintSid(
-    const SID_IDENTIFIER_AUTHORITY& authority,
-    BYTE subAuthorityCount,
-    DWORD subAuthority0,
-    DWORD subAuthority1 = 0,
-    DWORD subAuthority2 = 0,
-    DWORD subAuthority3 = 0,
-    DWORD subAuthority4 = 0,
-    DWORD subAuthority5 = 0,
-    DWORD subAuthority6 = 0,
-    DWORD subAuthority7 = 0)
-{
-    DWORD error = ERROR_SUCCESS;
-    Sid sid;
-
-    error = CreateSid(
-        sid,
-        authority,
-        subAuthorityCount,
-        subAuthority0,
-        subAuthority1,
-        subAuthority2,
-        subAuthority3,
-        subAuthority4,
-        subAuthority5,
-        subAuthority6,
-        subAuthority7);
-    RETURN_IF_FAILED(error);
-
-    sid.Print();
-    return error;
-}
-
-DWORD PrintSids()
-{
-    DWORD error = ERROR_SUCCESS;
-
-    PrintSid(SECURITY_NULL_SID_AUTHORITY, 1, SECURITY_NULL_RID);
-    PrintSid(SECURITY_WORLD_SID_AUTHORITY, 1, SECURITY_NULL_RID);
-    PrintSid(SECURITY_LOCAL_SID_AUTHORITY, 1, SECURITY_NULL_RID);
-    PrintSid(SECURITY_CREATOR_SID_AUTHORITY, 1, SECURITY_NULL_RID);
-    PrintSid(SECURITY_NON_UNIQUE_AUTHORITY, 1, SECURITY_NULL_RID);
-    PrintSid(SECURITY_RESOURCE_MANAGER_AUTHORITY, 1, SECURITY_NULL_RID);
-
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 1, 1);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 1);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 2, 1, 2);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 2);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 3, 1, 2, 3);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 3);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 4, 1, 2, 3, 4);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 4);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 5, 1, 2, 3, 4, 5);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 5);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 6, 1, 2, 3, 4, 5, 6);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 6);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 7, 1, 2, 3, 4, 5, 6, 7);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 7);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8);
-        sid.Print();
-    }
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY, 8);
-        sid.Print();
-    }
-
-    for (int i = 0; i < 20; i++)
-    {
-        Sid sid;
-        CreateRandomSid(sid, SECURITY_NT_AUTHORITY);
-        sid.Print();
-    }
-
-    return error;
-}
-
-DWORD SetSid(
-    PSID sid,
-    const SID_IDENTIFIER_AUTHORITY& authority,
-    BYTE subAuthorityCount = 0,
-    DWORD subAuthority0 = 0,
-    DWORD subAuthority1 = 0,
-    DWORD subAuthority2 = 0,
-    DWORD subAuthority3 = 0,
-    DWORD subAuthority4 = 0,
-    DWORD subAuthority5 = 0,
-    DWORD subAuthority6 = 0,
-    DWORD subAuthority7 = 0)
-{
-    DWORD error = ERROR_SUCCESS;
-    DWORD index = 0;
-    PDWORD subAuthority = nullptr;
-
-    if (!InitializeSid(sid, const_cast<PSID_IDENTIFIER_AUTHORITY>(&authority), subAuthorityCount))
-    {
-        error = GetLastError();
-        RETURN_FAILURE(error);
-    }
-
-#define SET_SUB_AUTHORITY(x) \
-    if (index < subAuthorityCount) \
-    { \
-        subAuthority = GetSidSubAuthority(sid, index); \
-        *subAuthority = x; \
-    } \
-    index++;
-
-    SET_SUB_AUTHORITY(subAuthority0);
-    SET_SUB_AUTHORITY(subAuthority1);
-    SET_SUB_AUTHORITY(subAuthority2);
-    SET_SUB_AUTHORITY(subAuthority3);
-    SET_SUB_AUTHORITY(subAuthority4);
-    SET_SUB_AUTHORITY(subAuthority5);
-    SET_SUB_AUTHORITY(subAuthority6);
-    SET_SUB_AUTHORITY(subAuthority7);
-
-#undef SET_SUB_AUTHORITY
-
-    return error;
-}
-
-DWORD CreateSid(
-    std::unique_ptr<byte[]>& sid,
-    const SID_IDENTIFIER_AUTHORITY& authority,
-    BYTE subAuthorityCount = 0,
-    DWORD subAuthority0 = 0,
-    DWORD subAuthority1 = 0,
-    DWORD subAuthority2 = 0,
-    DWORD subAuthority3 = 0,
-    DWORD subAuthority4 = 0,
-    DWORD subAuthority5 = 0,
-    DWORD subAuthority6 = 0,
-    DWORD subAuthority7 = 0)
-{
-    DWORD error = ERROR_SUCCESS;
-    DWORD length = GetSidLengthRequired(subAuthorityCount);
-    sid.reset(new byte[length]);
-    error = SetSid(
-        static_cast<PSID>(sid.get()),
-        authority,
-        subAuthorityCount,
-        subAuthority0,
-        subAuthority1,
-        subAuthority2,
-        subAuthority3,
-        subAuthority4,
-        subAuthority5,
-        subAuthority6,
-        subAuthority7);
-    RETURN_IF_FAILED(error);
-    return error;
-}
-
-typedef struct _SidFields {
+typedef struct _SidAuthority {
     SID_IDENTIFIER_AUTHORITY authority;
     BYTE subAuthorityCount;
     DWORD subAuthority0;
@@ -1400,17 +1161,27 @@ typedef struct _SidFields {
     DWORD subAuthority6;
     DWORD subAuthority7;
 
-    _SidFields()
-        : authority(SECURITY_NT_AUTHORITY),
-        subAuthorityCount(0),
-        subAuthority0(0),
-        subAuthority1(0),
-        subAuthority2(0),
-        subAuthority3(0),
-        subAuthority4(0),
-        subAuthority5(0),
-        subAuthority6(0),
-        subAuthority7(0)
+    _SidAuthority(
+        const SID_IDENTIFIER_AUTHORITY& a = SECURITY_NT_AUTHORITY,
+        BYTE saCount = 0,
+        DWORD sa0 = 0,
+        DWORD sa1 = 0,
+        DWORD sa2 = 0,
+        DWORD sa3 = 0,
+        DWORD sa4 = 0,
+        DWORD sa5 = 0,
+        DWORD sa6 = 0,
+        DWORD sa7 = 0)
+        : authority(a),
+        subAuthorityCount(saCount),
+        subAuthority0(sa0),
+        subAuthority1(sa1),
+        subAuthority2(sa2),
+        subAuthority3(sa3),
+        subAuthority4(sa4),
+        subAuthority5(sa5),
+        subAuthority6(sa6),
+        subAuthority7(sa7)
     {}
 
     void Parse(int argc, wchar_t* argv[])
@@ -1436,29 +1207,209 @@ typedef struct _SidFields {
 
 #undef SET_SUB_AUTHORITY
     }
-} SidFields, * PSidFields;
+} SidAuthority, *PSidAuthority;
+
+DWORD CreateSid(Sid& sid, const SidAuthority& sidAuthority)
+{
+    DWORD error = ERROR_SUCCESS;
+    PSID psid = nullptr;
+
+    if (!::AllocateAndInitializeSid(
+        const_cast<PSID_IDENTIFIER_AUTHORITY>(&sidAuthority.authority),
+        sidAuthority.subAuthorityCount,
+        sidAuthority.subAuthority0,
+        sidAuthority.subAuthority1,
+        sidAuthority.subAuthority2,
+        sidAuthority.subAuthority3,
+        sidAuthority.subAuthority4,
+        sidAuthority.subAuthority5,
+        sidAuthority.subAuthority6,
+        sidAuthority.subAuthority7,
+        &psid))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    sid.Attach(psid, AllocType::UseAllocateAndInitializeSid);
+    return error;
+}
+
+DWORD CreateRandomSid(Sid& sid, SidAuthority& sidAuthority)
+{
+    DWORD error = ERROR_SUCCESS;
+    BYTE count = 0;
+    const BYTE maxCount = 8;
+
+    if (sidAuthority.subAuthorityCount == 0)
+    {
+        sidAuthority.subAuthorityCount = rand() % maxCount;
+    }
+
+#define SET_SUB_AUTHORITY(x) \
+    if (count++ < sidAuthority.subAuthorityCount) \
+    { \
+        if (x == 0) \
+        { \
+            x = rand(); \
+        } \
+    } \
+    else \
+    { \
+        x = 0; \
+    }
+
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority0);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority1);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority2);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority3);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority4);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority5);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority6);
+    SET_SUB_AUTHORITY(sidAuthority.subAuthority7);
+
+#undef SET_SUB_AUTHORITY
+
+    error = CreateSid(sid, sidAuthority);
+    RETURN_IF_FAILED(error);
+    return error;
+}
+
+DWORD PrintCreateSid(const SidAuthority& sidAuthority)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    error = CreateSid(sid, sidAuthority);
+    RETURN_IF_FAILED(error);
+
+    sid.Print();
+    return error;
+}
+
+DWORD PrintCreateRandomSid(SidAuthority& sidAuthority)
+{
+    DWORD error = ERROR_SUCCESS;
+    Sid sid;
+
+    error = CreateRandomSid(sid, sidAuthority);
+    RETURN_IF_FAILED(error);
+
+    sid.Print();
+    return error;
+}
+
+
+DWORD PrintSids()
+{
+    DWORD error = ERROR_SUCCESS;
+
+    PrintCreateSid({ SECURITY_NULL_SID_AUTHORITY, 1, SECURITY_NULL_RID });
+    PrintCreateSid({ SECURITY_WORLD_SID_AUTHORITY, 1, SECURITY_NULL_RID });
+    PrintCreateSid({ SECURITY_LOCAL_SID_AUTHORITY, 1, SECURITY_NULL_RID });
+    PrintCreateSid({ SECURITY_CREATOR_SID_AUTHORITY, 1, SECURITY_NULL_RID });
+    PrintCreateSid({ SECURITY_NON_UNIQUE_AUTHORITY, 1, SECURITY_NULL_RID });
+    PrintCreateSid({ SECURITY_RESOURCE_MANAGER_AUTHORITY, 1, SECURITY_NULL_RID });
+
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 1, 1 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 1 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 2, 1, 2 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 2 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 3, 1, 2, 3 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 3 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 4, 1, 2, 3, 4 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 4 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 5, 1, 2, 3, 4, 5 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 5 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 6, 1, 2, 3, 4, 5, 6 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 6 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 7, 1, 2, 3, 4, 5, 6, 7 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 7 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8 };
+        PrintCreateRandomSid(sa);
+    }
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY, 8 };
+        PrintCreateRandomSid(sa);
+    }
+
+    for (int i = 0; i < 20; i++)
+    {
+        SidAuthority sa = { SECURITY_NT_AUTHORITY };
+        PrintCreateRandomSid(sa);
+    }
+
+    return error;
+}
 
 DWORD PrintSid(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
     std::unique_ptr<byte[]> psid;
     Sid sid;
-    SidFields sf;
+    SidAuthority sa;
 
-    sf.Parse(argc, argv);
+    sa.Parse(argc, argv);
 
     error = CreateSid(
         psid,
-        sf.authority,
-        sf.subAuthorityCount,
-        sf.subAuthority0,
-        sf.subAuthority1,
-        sf.subAuthority2,
-        sf.subAuthority3,
-        sf.subAuthority4,
-        sf.subAuthority5,
-        sf.subAuthority6,
-        sf.subAuthority7);
+        sa.authority,
+        sa.subAuthorityCount,
+        sa.subAuthority0,
+        sa.subAuthority1,
+        sa.subAuthority2,
+        sa.subAuthority3,
+        sa.subAuthority4,
+        sa.subAuthority5,
+        sa.subAuthority6,
+        sa.subAuthority7);
     RETURN_IF_FAILED(error);
 
     sid.Attach(static_cast<PSID>(psid.get()));
@@ -2376,21 +2327,21 @@ DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t* argv[])
     else
     {
         std::unique_ptr<byte[]> psid;
-        SidFields sf;
-        sf.Parse(argc, argv);
+        SidAuthority sa;
+        sa.Parse(argc, argv);
 
         error = CreateSid(
             psid,
-            sf.authority,
-            sf.subAuthorityCount,
-            sf.subAuthority0,
-            sf.subAuthority1,
-            sf.subAuthority2,
-            sf.subAuthority3,
-            sf.subAuthority4,
-            sf.subAuthority5,
-            sf.subAuthority6,
-            sf.subAuthority7);
+            sa.authority,
+            sa.subAuthorityCount,
+            sa.subAuthority0,
+            sa.subAuthority1,
+            sa.subAuthority2,
+            sa.subAuthority3,
+            sa.subAuthority4,
+            sa.subAuthority5,
+            sa.subAuthority6,
+            sa.subAuthority7);
         RETURN_IF_FAILED(error);
 
         error = SetTokenUser(tokenHandle, static_cast<PSID>(psid.get()));
@@ -2435,16 +2386,15 @@ public:
         return &_argv[_index];
     }
 
-    Arg Rest()
+    Arg Remaining()
     {
         return Arg(_argc - _index, &_argv[_index], 0);
     }
 };
 
-DWORD ProcessTokenMain(int argc, wchar_t* argv[])
+DWORD ProcessTokenMain(Arg& arg)
 {
     DWORD error = ERROR_SUCCESS;
-    Arg arg(argc, argv);
 
     ProcessToken processToken;
     ProcessToken duplicateToken;
@@ -2478,10 +2428,9 @@ DWORD ProcessTokenMain(int argc, wchar_t* argv[])
     return error;
 }
 
-DWORD ThreadTokenMain(int argc, wchar_t* argv[])
+DWORD ThreadTokenMain(Arg& arg)
 {
     DWORD error = ERROR_SUCCESS;
-    Arg arg(argc, argv);
 
     Impersonator impersonator;
     error = impersonator.BeginImpersonateSelf();
@@ -2765,10 +2714,214 @@ DWORD SecurityDescriptor7()
     return error;
 }
 
-DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
+DWORD SecurityDescriptor8()
 {
     DWORD error = ERROR_SUCCESS;
-    Arg arg(argc, argv);
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+    Sid sid;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with an owner and a group
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    CreateSid(sid, { SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8 });
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor9()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+    Sid sid;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with an owner and a group and no dacl
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    CreateSid(sid, { SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8 });
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorDacl(
+        &sd,
+        false,
+        nullptr,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor10()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+    Sid sid;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with an owner and a group and a null dacl
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    CreateSid(sid, { SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8 });
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorDacl(
+        &sd,
+        true,
+        nullptr,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptor11()
+{
+    DWORD error = ERROR_SUCCESS;
+    ThreadToken impersonationToken;
+    SECURITY_DESCRIPTOR sd;
+    ACL acl;
+    Sid sid;
+
+    error = GetImpersonationToken(impersonationToken);
+    RETURN_IF_FAILED(error);
+
+    // Create a security descriptor with an owner and a group and an empty dacl
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    CreateSid(sid, { SECURITY_NT_AUTHORITY, 8, 1, 2, 3, 4, 5, 6, 7, 8 });
+
+    if (!SetSecurityDescriptorOwner(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorGroup(
+        &sd,
+        sid.Get(),
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!InitializeAcl(&acl, sizeof(acl), ACL_REVISION))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    if (!SetSecurityDescriptorDacl(
+        &sd,
+        true,
+        &acl,
+        false))
+    {
+        error = GetLastError();
+        RETURN_FAILURE(error);
+    }
+
+    PrintSecurityDescriptor(&sd);
+    error = AccessCheck(&sd, impersonationToken.Get());
+    return error;
+}
+
+DWORD SecurityDescriptorMain(Arg& arg)
+{
+    DWORD error = ERROR_SUCCESS;
 
     if (arg.HasNext())
     {
@@ -2790,11 +2943,58 @@ DWORD SecurityDescriptorMain(int argc, wchar_t* argv[])
         SecurityDescriptor5();
         SecurityDescriptor6();
         SecurityDescriptor7();
+        SecurityDescriptor8();
+        SecurityDescriptor9();
+        SecurityDescriptor10();
+        SecurityDescriptor11();
     }
 
     return error;
 }
 
+DWORD SidMain(Arg& arg)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    if (!arg.HasNext())
+    {
+        error = PrintSids();
+    }
+    else
+    {
+        std::wstring command = arg.NextAsString();
+
+        if (command == L"wellknown")
+        {
+            if (!arg.HasNext())
+            {
+                error = PrintWellKnownSids();
+            }
+            else
+            {
+                WELL_KNOWN_SID_TYPE type = static_cast<WELL_KNOWN_SID_TYPE>(_wtoi(arg.Next()));
+                error = PrintWellKnownSid(type);
+            }
+        }
+        else if (command == L"aai" || command == L"allocateandinitializesid")
+        {
+            error = PrintSids();
+        }
+        else if (command == L"create")
+        {
+            if (!arg.HasNext())
+            {
+                error = ERROR_BAD_ARGUMENTS;
+            }
+            else
+            {
+                error = PrintSid(arg.RemainingArgCount(), arg.RemainingArgs());
+            }
+        }
+    }
+
+    return error;
+}
 
 void Usage(int argc, wchar_t* argv[])
 {
@@ -2811,33 +3011,32 @@ void Usage(int argc, wchar_t* argv[])
     std::wcout << argv[0] << L" sid wellknown <type>" << std::endl;
     std::wcout << argv[0] << L" sid aai|allocateandinitializesid" << std::endl;
     std::wcout << argv[0] << L" sid create <subauthority0> <subauthority1> ..." << std::endl;
-    std::wcout << argv[0] << L" sid <sid>" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
 {
     DWORD error = ERROR_SUCCESS;
-    int argIndex = 1;
+    Arg arg(argc, argv, 1);
 
-    if (argc < argIndex + 1)
+    if (!arg.HasNext())
     {
         Usage(argc, argv);
         return ERROR_BAD_ARGUMENTS;
     }
 
-    std::wstring command(argv[argIndex++]);
+    std::wstring command = arg.NextAsString();
 
     if (command == L"processtoken")
     {
-        error = ProcessTokenMain(argc - argIndex, &argv[argIndex]);
+        error = ProcessTokenMain(arg);
     }
     else if (command == L"threadtoken")
     {
-        error = ThreadTokenMain(argc - argIndex, &argv[argIndex]);
+        error = ThreadTokenMain(arg);
     }
     else if (command == L"file")
     {
-        if (argc < argIndex + 1)
+        if (!arg.HasNext())
         {
             Usage(argc, argv);
             return ERROR_BAD_ARGUMENTS;
@@ -2850,51 +3049,15 @@ int wmain(int argc, wchar_t* argv[])
         error = SetThreadTokenPrivileges();
         RETURN_IF_FAILED(error);
 
-        error = PrintFileSecurityDescriptor(argv[argIndex]);
+        error = PrintFileSecurityDescriptor(arg.NextAsString());
     }
     else if (command == L"sd")
     {
-        error = SecurityDescriptorMain(argc - argIndex, &argv[argIndex]);
+        error = SecurityDescriptorMain(arg);
     }
     else if (command == L"sid")
     {
-        if (argc == argIndex)
-        {
-            error = PrintSids();
-        }
-        else
-        {
-            command.assign(argv[argIndex++]);
-
-            if (command == L"wellknown")
-            {
-                if (argc == argIndex)
-                {
-                    error = PrintWellKnownSids();
-                }
-                else
-                {
-                    WELL_KNOWN_SID_TYPE type = static_cast<WELL_KNOWN_SID_TYPE>(_wtoi(argv[argIndex]));
-                    error = PrintWellKnownSid(type);
-                }
-            }
-            else if (command == L"aai" || command == L"allocateandinitializesid")
-            {
-                error = PrintSids();
-            }
-            else if (command == L"create")
-            {
-                if (argc < argIndex + 1)
-                {
-                    Usage(argc, argv);
-                    error = ERROR_BAD_ARGUMENTS;
-                }
-                else
-                {
-                    error = PrintSid(argc - argIndex, &argv[argIndex]);
-                }
-            }
-        }
+        error = SidMain(arg);
     }
     else
     {

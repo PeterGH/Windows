@@ -283,6 +283,121 @@ DWORD GetTokenInformation(HANDLE tokenHandle, TOKEN_INFORMATION_CLASS infoClass,
     return error;
 }
 
+DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
+{
+    DWORD error = ERROR_SUCCESS;
+    DWORD length = 0;
+
+    if (::LookupPrivilegeNameW(nullptr, luid, nullptr, &length))
+    {
+        std::wcerr << L"LookupPrivilegeName succeeded unexpectedly, length " << length << std::endl;
+        error = ERROR_BAD_ARGUMENTS;
+        return error;
+    }
+
+    error = GetLastError();
+
+    if (error != ERROR_INSUFFICIENT_BUFFER)
+    {
+        std::wcerr << L"LookupPrivilegeName failed to get the required length, error " << error << std::endl;
+        return error;
+    }
+
+    luidName.resize(length);
+
+    if (!::LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t*>(luidName.c_str()), &length))
+    {
+        error = GetLastError();
+        std::wcerr << L"LookupPrivilegeName failed with error " << error << std::endl;
+    }
+
+    return error;
+}
+
+DWORD PrintLuidAndAttributes(const LUID_AND_ATTRIBUTES& la)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wstring luidName;
+
+    GetPrivilegeName(const_cast<PLUID>(&la.Luid), luidName);
+
+    std::wcout << L"LUID: " << luidName << L", attributes: 0x" << std::hex << la.Attributes << std::dec << L" ";
+
+#define OUT_ATTRIBUTE(x) \
+        if (la.Attributes & (x)) \
+        { \
+            std::wcout << L"|" << #x; \
+        }
+
+    OUT_ATTRIBUTE(SE_PRIVILEGE_USED_FOR_ACCESS);
+    OUT_ATTRIBUTE(SE_PRIVILEGE_REMOVED);
+    OUT_ATTRIBUTE(SE_PRIVILEGE_ENABLED);
+    OUT_ATTRIBUTE(SE_PRIVILEGE_ENABLED_BY_DEFAULT);
+
+#undef OUT_ATTRIBUTE
+
+    std::wcout << std::endl;
+
+    return error;
+}
+
+DWORD PrintPrivileges(const TOKEN_PRIVILEGES& privileges)
+{
+    for (DWORD i = 0; i < privileges.PrivilegeCount; i++)
+    {
+        std::wcout << L"Privileges[" << i << L"]:" << std::endl;
+        PrintLuidAndAttributes(privileges.Privileges[i]);
+    }
+
+    return ERROR_SUCCESS;
+}
+
+DWORD SetTokenPrivilege(HANDLE tokenHandle, const std::wstring& privilege, bool enable)
+{
+    DWORD error = ERROR_SUCCESS;
+    LUID luid;
+    TOKEN_PRIVILEGES privileges;
+    TOKEN_PRIVILEGES prevState;
+    DWORD prevStateSize;
+
+    if (!::LookupPrivilegeValueW(nullptr, privilege.c_str(), &luid))
+    {
+        error = GetLastError();
+        std::wcerr << L"Failed to look up privilege " << privilege << ", error=" << error << std::endl;
+        return error;
+    }
+
+    privileges.PrivilegeCount = 1;
+    privileges.Privileges[0].Luid = luid;
+    privileges.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
+
+    prevStateSize = sizeof(prevState);
+
+    ::AdjustTokenPrivileges(
+        tokenHandle,
+        FALSE,
+        &privileges,
+        prevStateSize,
+        &prevState,
+        &prevStateSize);
+
+    // AdjustTokenPrivileges returns success even when some privilegs are not set.
+    // Must use GetLastError to check the result.
+    error = GetLastError();
+
+    if (error != ERROR_SUCCESS)
+    {
+        std::wcerr << L"Failed to set token privilege " << privilege << " to " << enable << std::endl;
+        return error;
+    }
+
+    std::wcout << L"Set token privilege " << privilege << " to " << enable << std::endl;
+    std::wcout << L"Token previous privilege:" << std::endl;
+    PrintPrivileges(prevState);
+
+    return error;
+}
+
 DWORD AccessCheck(PSECURITY_DESCRIPTOR securityDescriptor, HANDLE tokenHandle, DWORD desiredAccess = MAXIMUM_ALLOWED)
 {
     DWORD error = ERROR_SUCCESS;
@@ -663,6 +778,7 @@ private:
     std::wstring _type;
     Pointer<TOKEN_USER> _user;
     Pointer<TOKEN_PRIMARY_GROUP> _primaryGroup;
+    Pointer<TOKEN_PRIVILEGES> _privileges;
 
 public:
 
@@ -786,6 +902,12 @@ public:
         GetTokenInformation<TOKEN_PRIMARY_GROUP>(TokenPrimaryGroup, _primaryGroup, refresh);
         return _primaryGroup;
     }
+
+    Pointer<TOKEN_PRIVILEGES>& Privileges(bool refresh = false)
+    {
+        GetTokenInformation<TOKEN_PRIVILEGES>(TokenPrivileges, _privileges, refresh);
+        return _privileges;
+    }
 };
 
 class ThreadToken : public Token
@@ -855,138 +977,11 @@ DWORD GetImpersonationToken(ThreadToken& impersonationToken)
     return error;
 }
 
-DWORD GetPrivilegeName(PLUID luid, std::wstring& luidName)
+DWORD PrintTokenPrivileges(Token& token)
 {
     DWORD error = ERROR_SUCCESS;
-    DWORD length = 0;
-
-    if (::LookupPrivilegeNameW(nullptr, luid, nullptr, &length))
-    {
-        std::wcerr << L"LookupPrivilegeName succeeded unexpectedly, length " << length << std::endl;
-        error = ERROR_BAD_ARGUMENTS;
-        return error;
-    }
-
-    error = GetLastError();
-
-    if (error != ERROR_INSUFFICIENT_BUFFER)
-    {
-        std::wcerr << L"LookupPrivilegeName failed to get the required length, error " << error << std::endl;
-        return error;
-    }
-
-    luidName.resize(length);
-
-    if (!::LookupPrivilegeNameW(nullptr, luid, const_cast<wchar_t*>(luidName.c_str()), &length))
-    {
-        error = GetLastError();
-        std::wcerr << L"LookupPrivilegeName failed with error " << error << std::endl;
-    }
-
-    return error;
-}
-
-DWORD PrintLuidAndAttributes(const LUID_AND_ATTRIBUTES& la)
-{
-    DWORD error = ERROR_SUCCESS;
-    std::wstring luidName;
-
-    GetPrivilegeName(const_cast<PLUID>(&la.Luid), luidName);
-
-    std::wcout << L"LUID: " << luidName << L", attributes: 0x" << std::hex << la.Attributes << std::dec << L" ";
-
-#define OUT_ATTRIBUTE(x) \
-        if (la.Attributes & (x)) \
-        { \
-            std::wcout << L"|" << #x; \
-        }
-
-    OUT_ATTRIBUTE(SE_PRIVILEGE_USED_FOR_ACCESS);
-    OUT_ATTRIBUTE(SE_PRIVILEGE_REMOVED);
-    OUT_ATTRIBUTE(SE_PRIVILEGE_ENABLED);
-    OUT_ATTRIBUTE(SE_PRIVILEGE_ENABLED_BY_DEFAULT);
-
-#undef OUT_ATTRIBUTE
-
-    std::wcout << std::endl;
-
-    return error;
-}
-
-DWORD PrintPrivileges(const TOKEN_PRIVILEGES& privileges)
-{
-    for (DWORD i = 0; i < privileges.PrivilegeCount; i++)
-    {
-        std::wcout << L"Privileges[" << i << L"]:" << std::endl;
-        PrintLuidAndAttributes(privileges.Privileges[i]);
-    }
-
-    return ERROR_SUCCESS;
-}
-
-DWORD PrintTokenPrivileges(HANDLE tokenHandle)
-{
-    DWORD error = ERROR_SUCCESS;
-    std::unique_ptr<byte[]> buffer;
-
-    error = GetTokenInformation(tokenHandle, TokenPrivileges, buffer);
-
-    if (error == ERROR_SUCCESS)
-    {
-        std::wcout << L"TokenPrivileges:" << std::endl;
-        PrintPrivileges(*((PTOKEN_PRIVILEGES)buffer.get()));
-    }
-    else
-    {
-        std::wcerr << L"Failed to get TokenPrivileges info, error " << error << std::endl;
-    }
-
-    return error;
-}
-
-DWORD SetTokenPrivilege(HANDLE tokenHandle, const std::wstring& privilege, bool enable)
-{
-    DWORD error = ERROR_SUCCESS;
-    LUID luid;
-    TOKEN_PRIVILEGES privileges;
-    TOKEN_PRIVILEGES prevState;
-    DWORD prevStateSize;
-
-    if (!LookupPrivilegeValueW(nullptr, privilege.c_str(), &luid))
-    {
-        error = GetLastError();
-        std::wcerr << L"Failed to look up privilege " << privilege << ", error=" << error << std::endl;
-        return error;
-    }
-
-    privileges.PrivilegeCount = 1;
-    privileges.Privileges[0].Luid = luid;
-    privileges.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
-
-    prevStateSize = sizeof(prevState);
-
-    AdjustTokenPrivileges(
-        tokenHandle,
-        FALSE,
-        &privileges,
-        prevStateSize,
-        &prevState,
-        &prevStateSize);
-
-    // AdjustTokenPrivileges returns success even when some privilegs are not set.
-    // Must use GetLastError to check the result.
-    error = GetLastError();
-
-    if (error != ERROR_SUCCESS)
-    {
-        std::wcerr << L"Failed to set token privilege " << privilege << " to " << enable << std::endl;
-        return error;
-    }
-
-    std::wcout << L"Set token privilege " << privilege << " to " << enable << std::endl;
-    std::wcout << L"Token previous privilege:" << std::endl;
-    PrintPrivileges(prevState);
-
+    std::wcout << L"TokenPrivileges:" << std::endl;
+    PrintPrivileges(*(token.Privileges().Get()));
     return error;
 }
 
@@ -1016,7 +1011,7 @@ public:
         }
         else
         {
-            success = ImpersonateSelf(SecurityImpersonation);
+            success = ::ImpersonateSelf(SecurityImpersonation);
 
             if (success)
             {
@@ -1040,7 +1035,7 @@ public:
 
         if (_impersonating)
         {
-            success = RevertToSelf();
+            success = ::RevertToSelf();
 
             if (success)
             {
@@ -1079,7 +1074,6 @@ DWORD SetTokenPrivileges(HANDLE tokenHandle)
     // error = SetTokenPrivilege(tokenHandle, SE_CREATE_TOKEN_NAME, true);
     // RETURN_IF_FAILED(error);
 
-    PrintTokenPrivileges(tokenHandle);
     return error;
 }
 
@@ -2410,10 +2404,10 @@ DWORD ProcessTokenMain(Arg& arg)
     RETURN_IF_FAILED(error);
 
     std::wcout << L"Process token privileges =======>" << std::endl;
-    PrintTokenPrivileges(processToken.Get());
+    PrintTokenPrivileges(processToken);
 
     std::wcout << L"Duplicate token privileges =======>" << std::endl;
-    PrintTokenPrivileges(duplicateToken.Get());
+    PrintTokenPrivileges(duplicateToken);
 
     std::wcout << L"Process token user =======>" << std::endl;
     PrintSidAndAttributes(processToken.User()->User);
@@ -2450,10 +2444,10 @@ DWORD ThreadTokenMain(Arg& arg)
     RETURN_IF_FAILED(error);
 
     std::wcout << L"Thread token privileges =======>" << std::endl;
-    PrintTokenPrivileges(threadToken.Get());
+    PrintTokenPrivileges(threadToken);
 
     std::wcout << L"Duplicate token privileges =======>" << std::endl;
-    PrintTokenPrivileges(duplicateToken.Get());
+    PrintTokenPrivileges(duplicateToken);
 
     std::wcout << L"Thread token user =======>" << std::endl;
     PrintSidAndAttributes(threadToken.User()->User);

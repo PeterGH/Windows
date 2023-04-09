@@ -858,8 +858,9 @@ private:
     bool _isThreadToken;
     std::wstring _type;
     Pointer<TOKEN_USER> _user;
-    Pointer<TOKEN_PRIMARY_GROUP> _primaryGroup;
     Pointer<TOKEN_GROUPS> _groups;
+    Pointer<TOKEN_OWNER> _owner;
+    Pointer<TOKEN_PRIMARY_GROUP> _primaryGroup;
     Pointer<TOKEN_PRIVILEGES> _privileges;
 
 public:
@@ -979,16 +980,22 @@ public:
         return _user;
     }
 
-    Pointer<TOKEN_PRIMARY_GROUP>& PrimaryGroup(bool refresh = false)
-    {
-        GetTokenInformation<TOKEN_PRIMARY_GROUP>(TokenPrimaryGroup, _primaryGroup, refresh);
-        return _primaryGroup;
-    }
-
     Pointer<TOKEN_GROUPS>& Groups(bool refresh = false)
     {
         GetTokenInformation<TOKEN_GROUPS>(TokenGroups, _groups, refresh);
         return _groups;
+    }
+
+    Pointer<TOKEN_OWNER>& Owner(bool refresh = false)
+    {
+        GetTokenInformation<TOKEN_OWNER>(TokenOwner, _owner, refresh);
+        return _owner;
+    }
+
+    Pointer<TOKEN_PRIMARY_GROUP>& PrimaryGroup(bool refresh = false)
+    {
+        GetTokenInformation<TOKEN_PRIMARY_GROUP>(TokenPrimaryGroup, _primaryGroup, refresh);
+        return _primaryGroup;
     }
 
     Pointer<TOKEN_PRIVILEGES>& Privileges(bool refresh = false)
@@ -2374,6 +2381,21 @@ DWORD SetTokenUser(HANDLE tokenHandle, int argc, wchar_t* argv[])
     return error;
 }
 
+DWORD PrintTokenInformation(Token& token)
+{
+    std::wcout << L"Token user =======>" << std::endl;
+    PrintSidAndAttributes(token.User()->User);
+    std::wcout << L"Token groups =======>" << std::endl;
+    PrintTokenGroups(token.Groups().Get());
+    std::wcout << L"Token owner =======>" << std::endl;
+    PrintSid(token.Owner()->Owner);
+    std::wcout << L"Token primary group =======>" << std::endl;
+    PrintSid(token.PrimaryGroup()->PrimaryGroup);
+    std::wcout << L"Token privileges =======>" << std::endl;
+    PrintTokenPrivileges(token);
+    return ERROR_SUCCESS;
+}
+
 class Arg
 {
 private:
@@ -2420,39 +2442,34 @@ public:
 DWORD ProcessTokenMain(Arg& arg)
 {
     DWORD error = ERROR_SUCCESS;
-
     ProcessToken processToken;
-    ProcessToken duplicateToken;
 
     error = processToken.Open();
     RETURN_IF_FAILED(error);
 
-    std::wcout << L"Duplicate process token =======>" << std::endl;
-    error = processToken.Duplicate(&duplicateToken.Get());
-    RETURN_IF_FAILED(error);
+    if (arg.HasNext())
+    {
+        std::wstring command = arg.NextAsString();
 
-    error = SetTokenPrivileges(duplicateToken.Get());
-    RETURN_IF_FAILED(error);
+        if (command == L"duplicate")
+        {
+            ThreadToken duplicateToken;
 
-    std::wcout << L"Process token privileges =======>" << std::endl;
-    PrintTokenPrivileges(processToken);
+            std::wcout << L"Duplicate process token =======>" << std::endl;
+            error = processToken.Duplicate(&duplicateToken.Get());
+            RETURN_IF_FAILED(error);
 
-    std::wcout << L"Duplicate token privileges =======>" << std::endl;
-    PrintTokenPrivileges(duplicateToken);
-
-    std::wcout << L"Process token user =======>" << std::endl;
-    PrintSidAndAttributes(processToken.User()->User);
-    std::wcout << L"Process token primary group =======>" << std::endl;
-    PrintSid(processToken.PrimaryGroup()->PrimaryGroup);
-    std::wcout << L"Process token groups =======>" << std::endl;
-    PrintTokenGroups(processToken.Groups().Get());
-
-    std::wcout << L"Duplicate token user =======>" << std::endl;
-    PrintSidAndAttributes(duplicateToken.User()->User);
-    std::wcout << L"Duplicate token primary group =======>" << std::endl;
-    PrintSid(duplicateToken.PrimaryGroup()->PrimaryGroup);
-    std::wcout << L"Duplicate token groups =======>" << std::endl;
-    PrintTokenGroups(duplicateToken.Groups().Get());
+            error = PrintTokenInformation(duplicateToken);
+        }
+        else
+        {
+            error = ERROR_BAD_ARGUMENTS;
+        }
+    }
+    else
+    {
+        error = PrintTokenInformation(processToken);
+    }
 
     return error;
 }
@@ -2466,49 +2483,37 @@ DWORD ThreadTokenMain(Arg& arg)
     RETURN_IF_FAILED(error);
 
     ThreadToken threadToken;
-    ThreadToken duplicateToken;
-
     error = threadToken.Open();
     RETURN_IF_FAILED(error);
-
-    std::wcout << L"Duplicate thread token =======>" << std::endl;
-    error = threadToken.Duplicate(&duplicateToken.Get());
-    RETURN_IF_FAILED(error);
-
-    error = SetTokenPrivileges(duplicateToken.Get());
-    RETURN_IF_FAILED(error);
-
-    std::wcout << L"Thread token privileges =======>" << std::endl;
-    PrintTokenPrivileges(threadToken);
-
-    std::wcout << L"Duplicate token privileges =======>" << std::endl;
-    PrintTokenPrivileges(duplicateToken);
-
-    std::wcout << L"Thread token user =======>" << std::endl;
-    PrintSidAndAttributes(threadToken.User()->User);
-    std::wcout << L"Thread token primary group =======>" << std::endl;
-    PrintSid(threadToken.PrimaryGroup()->PrimaryGroup);
-    std::wcout << L"Thread token groups =======>" << std::endl;
-    PrintTokenGroups(threadToken.Groups().Get());
-
-    std::wcout << L"Duplicate token user =======>" << std::endl;
-    PrintSidAndAttributes(duplicateToken.User()->User);
-    std::wcout << L"Duplicate token primary group =======>" << std::endl;
-    PrintSid(duplicateToken.PrimaryGroup()->PrimaryGroup);
-    std::wcout << L"Duplicate token groups =======>" << std::endl;
-    PrintTokenGroups(duplicateToken.Groups().Get());
 
     if (arg.HasNext())
     {
         int argIndex = 0;
         std::wstring command(arg.Next());
 
-        if (command == L"user")
+        if (command == L"duplicate")
+        {
+            ThreadToken duplicateToken;
+
+            std::wcout << L"Duplicate thread token =======>" << std::endl;
+            error = threadToken.Duplicate(&duplicateToken.Get());
+            RETURN_IF_FAILED(error);
+
+            error = PrintTokenInformation(duplicateToken);
+
+        }
+        else if (command == L"user")
         {
             if (!arg.HasNext())
             {
                 RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
             }
+
+            ThreadToken duplicateToken;
+
+            std::wcout << L"Duplicate thread token =======>" << std::endl;
+            error = threadToken.Duplicate(&duplicateToken.Get());
+            RETURN_IF_FAILED(error);
 
             error = SetTokenUser(duplicateToken.Get(), arg.RemainingArgCount(), arg.RemainingArgs());
             RETURN_IF_FAILED(error);
@@ -2520,6 +2525,10 @@ DWORD ThreadTokenMain(Arg& arg)
         {
             RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
         }
+    }
+    else
+    {
+        error = PrintTokenInformation(threadToken);
     }
 
     return error;
@@ -3033,7 +3042,9 @@ void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" processtoken" << std::endl;
+    std::wcout << argv[0] << L" processtoken duplicate" << std::endl;
     std::wcout << argv[0] << L" threadtoken" << std::endl;
+    std::wcout << argv[0] << L" threadtoken duplicate" << std::endl;
     std::wcout << argv[0] << L" threadtoken user <subauthority0> <subauthority1> ..." << std::endl;
     std::wcout << argv[0] << L" threadtoken user <sid>" << std::endl;
     std::wcout << argv[0] << L" file <file path>" << std::endl;

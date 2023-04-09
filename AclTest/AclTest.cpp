@@ -345,7 +345,7 @@ DWORD PrintPrivileges(const TOKEN_PRIVILEGES& privileges)
 {
     for (DWORD i = 0; i < privileges.PrivilegeCount; i++)
     {
-        std::wcout << L"Privileges[" << i << L"]:" << std::endl;
+        std::wcout << L"Privileges[" << i << L"]: ";
         PrintLuidAndAttributes(privileges.Privileges[i]);
     }
 
@@ -452,6 +452,78 @@ DWORD AccessCheck(PSECURITY_DESCRIPTOR securityDescriptor, HANDLE tokenHandle, D
     std::wcout << L"Max allowed access is 0x" << std::hex << grantedAccess << std::dec << std::endl;
     return error;
 }
+
+class Impersonator
+{
+private:
+    volatile bool _impersonating;
+
+public:
+    Impersonator()
+        : _impersonating(false)
+    {}
+
+    ~Impersonator()
+    {
+        EndImpersonateSelf();
+    }
+
+    DWORD BeginImpersonateSelf()
+    {
+        DWORD error = ERROR_SUCCESS;
+        BOOL success;
+
+        if (_impersonating)
+        {
+            std::wcout << L"Already impersonating." << std::endl;
+        }
+        else
+        {
+            success = ::ImpersonateSelf(SecurityImpersonation);
+
+            if (success)
+            {
+                std::wcout << L"Impersonating." << std::endl;
+                _impersonating = true;
+            }
+            else
+            {
+                error = GetLastError();
+                std::wcerr << L"Failed to impersonate, error=" << error << std::endl;
+            }
+        }
+
+        return error;
+    }
+
+    DWORD EndImpersonateSelf()
+    {
+        DWORD error = ERROR_SUCCESS;
+        BOOL success;
+
+        if (_impersonating)
+        {
+            success = ::RevertToSelf();
+
+            if (success)
+            {
+                _impersonating = false;
+                std::wcout << L"Stoped impersonating." << std::endl;
+            }
+            else
+            {
+                error = GetLastError();
+                std::wcerr << L"Failed to stop impersonating, error=" << error << std::endl;
+            }
+        }
+        else
+        {
+            std::wcout << L"Already stoped impersonating." << std::endl;
+        }
+
+        return error;
+    }
+};
 
 enum class AllocType
 {
@@ -692,14 +764,23 @@ public:
         return Pointer::Free();
     }
 
-    void Print()
+    std::wstring Description()
     {
-        std::wcout << Str() << L"[IsWellKnown=" << IsWellKnown();
+        std::wostringstream oss;
+        oss << Str() << L"[IsWellKnown=" << IsWellKnown();
+
         if (_isWellKnown)
         {
-            std::wcout << L"|Type=" << _type << L"|" << _strType;
+            oss << L"|Type=" << _type << L"|" << _strType;
         }
-        std::wcout << L"]" << std::endl;
+
+        oss << L"]";
+        return oss.str();
+    }
+
+    void Print()
+    {
+        std::wcout << Description() << std::endl;
     }
 };
 
@@ -778,6 +859,7 @@ private:
     std::wstring _type;
     Pointer<TOKEN_USER> _user;
     Pointer<TOKEN_PRIMARY_GROUP> _primaryGroup;
+    Pointer<TOKEN_GROUPS> _groups;
     Pointer<TOKEN_PRIVILEGES> _privileges;
 
 public:
@@ -903,6 +985,12 @@ public:
         return _primaryGroup;
     }
 
+    Pointer<TOKEN_GROUPS>& Groups(bool refresh = false)
+    {
+        GetTokenInformation<TOKEN_GROUPS>(TokenGroups, _groups, refresh);
+        return _groups;
+    }
+
     Pointer<TOKEN_PRIVILEGES>& Privileges(bool refresh = false)
     {
         GetTokenInformation<TOKEN_PRIVILEGES>(TokenPrivileges, _privileges, refresh);
@@ -984,78 +1072,6 @@ DWORD PrintTokenPrivileges(Token& token)
     PrintPrivileges(*(token.Privileges().Get()));
     return error;
 }
-
-class Impersonator
-{
-private:
-    volatile bool _impersonating;
-
-public:
-    Impersonator()
-        : _impersonating(false)
-    {}
-
-    ~Impersonator()
-    {
-        EndImpersonateSelf();
-    }
-
-    DWORD BeginImpersonateSelf()
-    {
-        DWORD error = ERROR_SUCCESS;
-        BOOL success;
-
-        if (_impersonating)
-        {
-            std::wcout << L"Already impersonating." << std::endl;
-        }
-        else
-        {
-            success = ::ImpersonateSelf(SecurityImpersonation);
-
-            if (success)
-            {
-                std::wcout << L"Impersonating." << std::endl;
-                _impersonating = true;
-            }
-            else
-            {
-                error = GetLastError();
-                std::wcerr << L"Failed to impersonate, error=" << error << std::endl;
-            }
-        }
-
-        return error;
-    }
-
-    DWORD EndImpersonateSelf()
-    {
-        DWORD error = ERROR_SUCCESS;
-        BOOL success;
-
-        if (_impersonating)
-        {
-            success = ::RevertToSelf();
-
-            if (success)
-            {
-                _impersonating = false;
-                std::wcout << L"Stoped impersonating." << std::endl;
-            }
-            else
-            {
-                error = GetLastError();
-                std::wcerr << L"Failed to stop impersonating, error=" << error << std::endl;
-            }
-        }
-        else
-        {
-            std::wcout << L"Already stoped impersonating." << std::endl;
-        }
-
-        return error;
-    }
-};
 
 DWORD SetTokenPrivileges(HANDLE tokenHandle)
 {
@@ -1424,7 +1440,7 @@ private:
 
         if (_aces == NULL)
         {
-            error = GetExplicitEntriesFromAclW(_acl, &_acesCount, &_aces);
+            error = ::GetExplicitEntriesFromAclW(_acl, &_acesCount, &_aces);
 
             if (error != ERROR_SUCCESS)
             {
@@ -2249,7 +2265,9 @@ DWORD PrintSid(const PSID psid)
 DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
 {
     DWORD error = ERROR_SUCCESS;
-    PrintSid(sa.Sid);
+    Sid sid;
+    sid.Attach(sa.Sid);
+    std::wcout << sid.Description();
 
 #define OUT_ATTRIBUTE(x) \
     if (sa.Attributes & (x)) \
@@ -2270,6 +2288,19 @@ DWORD PrintSidAndAttributes(const SID_AND_ATTRIBUTES& sa)
 #undef OUT_ATTRIBUTE
 
     std::wcout << std::endl;
+    return error;
+}
+
+DWORD PrintTokenGroups(const PTOKEN_GROUPS groups)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    for (DWORD i = 0; i < groups->GroupCount; i++)
+    {
+        std::wcout << L"Group[" << i << L"]: ";
+        PrintSidAndAttributes(groups->Groups[i]);
+    }
+
     return error;
 }
 
@@ -2413,11 +2444,15 @@ DWORD ProcessTokenMain(Arg& arg)
     PrintSidAndAttributes(processToken.User()->User);
     std::wcout << L"Process token primary group =======>" << std::endl;
     PrintSid(processToken.PrimaryGroup()->PrimaryGroup);
+    std::wcout << L"Process token groups =======>" << std::endl;
+    PrintTokenGroups(processToken.Groups().Get());
 
     std::wcout << L"Duplicate token user =======>" << std::endl;
     PrintSidAndAttributes(duplicateToken.User()->User);
     std::wcout << L"Duplicate token primary group =======>" << std::endl;
     PrintSid(duplicateToken.PrimaryGroup()->PrimaryGroup);
+    std::wcout << L"Duplicate token groups =======>" << std::endl;
+    PrintTokenGroups(duplicateToken.Groups().Get());
 
     return error;
 }
@@ -2453,11 +2488,15 @@ DWORD ThreadTokenMain(Arg& arg)
     PrintSidAndAttributes(threadToken.User()->User);
     std::wcout << L"Thread token primary group =======>" << std::endl;
     PrintSid(threadToken.PrimaryGroup()->PrimaryGroup);
+    std::wcout << L"Thread token groups =======>" << std::endl;
+    PrintTokenGroups(threadToken.Groups().Get());
 
     std::wcout << L"Duplicate token user =======>" << std::endl;
     PrintSidAndAttributes(duplicateToken.User()->User);
     std::wcout << L"Duplicate token primary group =======>" << std::endl;
     PrintSid(duplicateToken.PrimaryGroup()->PrimaryGroup);
+    std::wcout << L"Duplicate token groups =======>" << std::endl;
+    PrintTokenGroups(duplicateToken.Groups().Get());
 
     if (arg.HasNext())
     {

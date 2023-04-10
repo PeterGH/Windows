@@ -57,72 +57,89 @@ public:
 
 class ThreadPool
 {
-private:
+protected:
     TP_CALLBACK_ENVIRON _callbackEnv;
     PTP_POOL _pool;
     PTP_CLEANUP_GROUP _cleanupGroup;
 
     void Dispose()
     {
+        TRACE_FUNCTION;
+
         if (_cleanupGroup != nullptr)
         {
-            CloseThreadpoolCleanupGroupMembers(_cleanupGroup, false, nullptr);
-            CloseThreadpoolCleanupGroup(_cleanupGroup);
+            ::CloseThreadpoolCleanupGroupMembers(_cleanupGroup, false, nullptr);
+            ::CloseThreadpoolCleanupGroup(_cleanupGroup);
             _cleanupGroup = nullptr;
         }
 
         if (_pool != nullptr)
         {
-            CloseThreadpool(_pool);
+            ::CloseThreadpool(_pool);
             _pool = nullptr;
         }
 
-        DestroyThreadpoolEnvironment(&_callbackEnv);
+        ::DestroyThreadpoolEnvironment(&_callbackEnv);
     }
 
 public:
     ThreadPool()
         : _callbackEnv{ 0 }, _pool(nullptr), _cleanupGroup(nullptr)
-    {}
-
-    ~ThreadPool()
     {
+        TRACE_FUNCTION;
+    }
+
+    virtual ~ThreadPool()
+    {
+        TRACE_FUNCTION;
         Dispose();
     }
 
-    DWORD Init()
+    virtual DWORD Init()
     {
+        TRACE_FUNCTION;
+
         DWORD error = ERROR_SUCCESS;
 
-        _cleanupGroup = CreateThreadpoolCleanupGroup();
+        _cleanupGroup = ::CreateThreadpoolCleanupGroup();
 
         if (_cleanupGroup == nullptr)
         {
             RETURN_FAILURE(GetLastError());
         }
 
-        _pool = CreateThreadpool(nullptr);
+        _pool = ::CreateThreadpool(nullptr);
 
         if (_pool == nullptr)
         {
             RETURN_FAILURE(GetLastError());
         }
 
-        SetThreadpoolThreadMaximum(_pool, 16);
+        ::SetThreadpoolThreadMaximum(_pool, 16);
 
-        if (!SetThreadpoolThreadMinimum(_pool, 4))
+        if (!::SetThreadpoolThreadMinimum(_pool, 4))
         {
             RETURN_FAILURE(GetLastError());
         }
 
-        InitializeThreadpoolEnvironment(&_callbackEnv);
+        ::InitializeThreadpoolEnvironment(&_callbackEnv);
 
-        SetThreadpoolCallbackCleanupGroup(&_callbackEnv, _cleanupGroup, nullptr);
-        SetThreadpoolCallbackPool(&_callbackEnv, _pool);
+        ::SetThreadpoolCallbackCleanupGroup(&_callbackEnv, _cleanupGroup, nullptr);
+        ::SetThreadpoolCallbackPool(&_callbackEnv, _pool);
 
         return error;
     }
 
+    virtual DWORD Submit(IWork* iwork)
+    {
+        TRACE_FUNCTION;
+        return ERROR_CALL_NOT_IMPLEMENTED;
+    }
+};
+
+class ThreadPool1 : public ThreadPool
+{
+public:
     static void CALLBACK WorkCallback(
         PTP_CALLBACK_INSTANCE instance,
         PVOID context,
@@ -133,21 +150,112 @@ public:
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
         IWork* iwork = (IWork*)context;
         iwork->Execute();
-        CloseThreadpoolWork(work);
+        ::CloseThreadpoolWork(work);
     }
 
-    DWORD Submit(IWork* iwork)
+    virtual DWORD Submit(IWork* iwork) override
     {
+        TRACE_FUNCTION;
+
         DWORD error = ERROR_SUCCESS;
 
-        PTP_WORK work = CreateThreadpoolWork(WorkCallback, iwork, &_callbackEnv);
+        PTP_WORK work = ::CreateThreadpoolWork(WorkCallback, iwork, &_callbackEnv);
 
         if (work == nullptr)
         {
             RETURN_FAILURE(GetLastError());
         }
 
-        SubmitThreadpoolWork(work);
+        ::SubmitThreadpoolWork(work);
+        return error;
+    }
+};
+
+class ThreadPool2 : public ThreadPool
+{
+private:
+    typedef struct _Item
+    {
+        SLIST_ENTRY Link;
+        IWork* Work;
+    } Item, *PItem;
+
+    DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
+    SLIST_HEADER _head;
+
+    PTP_WORK _work;
+
+public:
+
+    ThreadPool2() : ThreadPool(), _work(nullptr)
+    {
+        TRACE_FUNCTION;
+    }
+
+    static void CALLBACK WorkCallback(
+        PTP_CALLBACK_INSTANCE instance,
+        PVOID context,
+        PTP_WORK work
+    )
+    {
+        TRACE_FUNCTION;
+
+        std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
+
+        PSLIST_HEADER head = (PSLIST_HEADER)context;
+        PSLIST_ENTRY entry = InterlockedPopEntrySList(head);
+
+        if (entry == nullptr)
+        {
+            std::wcout << L"No pending work to do." << std::endl;
+        }
+        else
+        {
+            PItem item = (PItem)CONTAINING_RECORD(entry, Item, Link);
+            item->Work->Execute();
+            _aligned_free(item);
+            item = nullptr;
+        }
+    }
+
+    virtual DWORD Init() override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        error = ThreadPool::Init();
+        RETURN_IF_FAILED(error);
+
+        InitializeSListHead(&_head);
+
+        _work = ::CreateThreadpoolWork(WorkCallback, &_head, &_callbackEnv);
+
+        if (_work == nullptr)
+        {
+            RETURN_FAILURE(GetLastError());
+        }
+
+        return error;
+    }
+
+    virtual DWORD Submit(IWork* iwork) override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        PItem item = (PItem)_aligned_malloc(sizeof(Item), MEMORY_ALLOCATION_ALIGNMENT);
+
+        if (item == nullptr)
+        {
+            RETURN_FAILURE(ERROR_NOT_ENOUGH_MEMORY);
+        }
+
+        item->Work = iwork;
+        InterlockedPushEntrySList(&_head, &item->Link);
+        ::SubmitThreadpoolWork(_work);
+
         return error;
     }
 };
@@ -174,9 +282,14 @@ public:
         return HasNext() ? _argv[_index++] : nullptr;
     }
 
-    std::wstring NextAsString()
+    std::wstring NextAsString(const std::wstring& defaultValue = L"")
     {
-        return HasNext() ? std::wstring(_argv[_index++]) : L"";
+        return HasNext() ? std::wstring(_argv[_index++]) : defaultValue;
+    }
+
+    int NextAsInt(int defaultValue = 0)
+    {
+        return HasNext() ? _wtoi(_argv[_index++]) : defaultValue;
     }
 
     int RemainingArgCount() const
@@ -195,17 +308,10 @@ public:
     }
 };
 
-void Usage(int argc, wchar_t* argv[])
-{
-    std::wcout << L"Usage:" << std::endl;
-    std::wcout << argv[0] << std::endl;
-}
-
-int wmain(int argc, wchar_t* argv[])
+DWORD TestThread(ThreadPool& threadpool)
 {
     DWORD error = ERROR_SUCCESS;
-    Arg arg(argc, argv, 1);
-    ThreadPool threadpool;
+
     error = threadpool.Init();
     RETURN_IF_FAILED(error);
 
@@ -219,6 +325,35 @@ int wmain(int argc, wchar_t* argv[])
     {
         std::wcout << L"Wait for all works to complete." << std::endl;
         ::Sleep(1000);
+    }
+
+    return error;
+}
+
+void Usage(int argc, wchar_t* argv[])
+{
+    std::wcout << L"Usage:" << std::endl;
+    std::wcout << argv[0] << L"[1|2]" << std::endl;
+}
+
+int wmain(int argc, wchar_t* argv[])
+{
+    DWORD error = ERROR_SUCCESS;
+    Arg arg(argc, argv, 1);
+
+    if (arg.HasNext())
+    {
+        int choice = arg.NextAsInt();
+        if (choice == 1)
+        {
+            ThreadPool1 threadpool;
+            error = TestThread(threadpool);
+        }
+        else if (choice == 2)
+        {
+            ThreadPool2 threadpool;
+            error = TestThread(threadpool);
+        }
     }
 
     return error;

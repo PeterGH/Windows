@@ -38,8 +38,11 @@ volatile static LONG64 WorkCount = 0;
 
 class Work : public IWork
 {
+private:
+    UINT64 _id;
+
 public:
-    Work() : IWork()
+    Work(UINT64 id = 0) : IWork(), _id(id)
     {
         TRACE_FUNCTION;
     }
@@ -47,10 +50,17 @@ public:
     {
         TRACE_FUNCTION
     }
+
+    void SetId(UINT64 id)
+    {
+        _id = id;
+    }
+
     virtual void Execute() override
     {
         TRACE_FUNCTION;
-        ::Sleep(1000);
+        std::wcout << L"Executing work " << _id << std::endl;
+        ::Sleep(2000);
         ::InterlockedIncrement64(&WorkCount);
     }
 };
@@ -178,19 +188,27 @@ private:
     {
         SLIST_ENTRY Link;
         IWork* Work;
+        ThreadPool2* ThreadPool;
     } Item, *PItem;
 
     DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
     SLIST_HEADER _head;
 
     PTP_WORK _work;
+    volatile LONG64 _pendingCount;
+    volatile LONG64 _runningCount;
+    volatile LONG64 _completeCount;
 
 public:
 
-    ThreadPool2() : ThreadPool(), _work(nullptr)
+    ThreadPool2() : ThreadPool(), _work(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0)
     {
         TRACE_FUNCTION;
     }
+
+    LONG64 PendingCount() { return _pendingCount; }
+    LONG64 RunningCount() { return _runningCount; }
+    LONG64 CompleteCount() { return _completeCount; }
 
     static void CALLBACK WorkCallback(
         PTP_CALLBACK_INSTANCE instance,
@@ -203,7 +221,7 @@ public:
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
 
         PSLIST_HEADER head = (PSLIST_HEADER)context;
-        PSLIST_ENTRY entry = InterlockedPopEntrySList(head);
+        PSLIST_ENTRY entry = ::InterlockedPopEntrySList(head);
 
         if (entry == nullptr)
         {
@@ -212,7 +230,13 @@ public:
         else
         {
             PItem item = (PItem)CONTAINING_RECORD(entry, Item, Link);
+            ::InterlockedDecrement64(&item->ThreadPool->_pendingCount);
+            ::InterlockedIncrement64(&item->ThreadPool->_runningCount);
+
             item->Work->Execute();
+
+            ::InterlockedDecrement64(&item->ThreadPool->_runningCount);
+            ::InterlockedIncrement64(&item->ThreadPool->_completeCount);
             _aligned_free(item);
             item = nullptr;
         }
@@ -227,7 +251,7 @@ public:
         error = ThreadPool::Init();
         RETURN_IF_FAILED(error);
 
-        InitializeSListHead(&_head);
+        ::InitializeSListHead(&_head);
 
         _work = ::CreateThreadpoolWork(WorkCallback, &_head, &_callbackEnv);
 
@@ -253,9 +277,17 @@ public:
         }
 
         item->Work = iwork;
-        InterlockedPushEntrySList(&_head, &item->Link);
-        ::SubmitThreadpoolWork(_work);
+        item->ThreadPool = this;
+        ::InterlockedPushEntrySList(&_head, &item->Link);
+        ::InterlockedIncrement64(&_pendingCount);
 
+        while (_runningCount > 2)
+        {
+            std::wcout << L"Waiting for running work count to drop." << std::endl;
+            ::Sleep(200);
+        }
+
+        ::SubmitThreadpoolWork(_work);
         return error;
     }
 };
@@ -318,6 +350,7 @@ DWORD TestThread(ThreadPool& threadpool)
     Work work[30];
     for (int i = 0; i < 30; i++)
     {
+        work[i].SetId(i);
         threadpool.Submit(&work[i]);
     }
 
@@ -353,6 +386,8 @@ int wmain(int argc, wchar_t* argv[])
         {
             ThreadPool2 threadpool;
             error = TestThread(threadpool);
+            std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
+                << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
         }
     }
 

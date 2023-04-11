@@ -153,8 +153,7 @@ public:
     static void CALLBACK WorkCallback(
         PTP_CALLBACK_INSTANCE instance,
         PVOID context,
-        PTP_WORK work
-    )
+        PTP_WORK work)
     {
         TRACE_FUNCTION;
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
@@ -201,7 +200,7 @@ private:
 
 public:
 
-    ThreadPool2() : ThreadPool(), _work(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0)
+    ThreadPool2() : ThreadPool(), _head{ 0 }, _work(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0)
     {
         TRACE_FUNCTION;
     }
@@ -213,8 +212,7 @@ public:
     static void CALLBACK WorkCallback(
         PTP_CALLBACK_INSTANCE instance,
         PVOID context,
-        PTP_WORK work
-    )
+        PTP_WORK work)
     {
         TRACE_FUNCTION;
 
@@ -288,6 +286,42 @@ public:
         }
 
         ::SubmitThreadpoolWork(_work);
+        return error;
+    }
+};
+
+class ThreadPool3 : public ThreadPool
+{
+public:
+    static void CALLBACK TimerCallback(
+        PTP_CALLBACK_INSTANCE instance,
+        PVOID context,
+        PTP_TIMER timer)
+    {
+        TRACE_FUNCTION;
+        std::wcout << L"Start timer instance " << std::hex << instance << std::dec << std::endl;
+        IWork* iwork = (IWork*)context;
+        iwork->Execute();
+        ::CloseThreadpoolTimer(timer);
+    }
+
+    virtual DWORD Submit(IWork* iwork) override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        PTP_TIMER timer = ::CreateThreadpoolTimer(TimerCallback, iwork, &_callbackEnv);
+
+        if (timer == nullptr)
+        {
+            RETURN_FAILURE(GetLastError());
+        }
+
+        ULARGE_INTEGER ul;
+        ul.QuadPart = -(1000 * 1000 * 10); // 1 second
+        FILETIME due = { ul.LowPart, ul.HighPart };
+        ::SetThreadpoolTimer(timer, &due, 0, 0);
         return error;
     }
 };
@@ -366,7 +400,7 @@ DWORD TestThread(ThreadPool& threadpool)
 void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
-    std::wcout << argv[0] << L"[1|2]" << std::endl;
+    std::wcout << argv[0] << L" [1|2|3]" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -389,6 +423,16 @@ int wmain(int argc, wchar_t* argv[])
             std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
                 << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
         }
+        else if (choice == 3)
+        {
+            ThreadPool3 threadpool;
+            error = TestThread(threadpool);
+        }
+    }
+    else
+    {
+        Usage(argc, argv);
+        return ERROR_BAD_ARGUMENTS;
     }
 
     return error;

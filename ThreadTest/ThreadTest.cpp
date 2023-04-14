@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <iostream>
+#include <sstream>
 
 #define RETURN_IF_FAILED(e) \
     { \
@@ -18,7 +19,101 @@
         return _e; \
     }
 
-#define TRACE_FUNCTION std::wcout << __FUNCTION__ << std::endl;
+#define TRACE_FUNCTION std::wcout << L"[" << GetSystemTimeString() << L"] "<< __FUNCTION__ << std::endl;
+
+std::wstring GetSystemTimeString()
+{
+    DWORD error = ERROR_SUCCESS;
+    SYSTEMTIME st;
+    std::wstring date;
+    std::wstring time;
+    int length;
+
+    ::GetSystemTime(&st);
+
+    length = ::GetDateFormatEx(
+        LOCALE_NAME_SYSTEM_DEFAULT,
+        0,
+        &st,
+        L"yyyy-MM-dd",
+        nullptr,
+        0,
+        nullptr);
+
+    if (length == 0)
+    {
+        error = GetLastError();
+        std::wcerr << L"GetDateFormatEx failed to get the required length, error=" << error << std::endl;
+    }
+    else
+    {
+        date.resize(length);
+
+        length = ::GetDateFormatEx(
+            LOCALE_NAME_SYSTEM_DEFAULT,
+            0,
+            &st,
+            L"yyyy-MM-dd",
+            const_cast<wchar_t*>(date.c_str()),
+            length,
+            nullptr);
+
+        if (length == 0)
+        {
+            error = GetLastError();
+            std::wcerr << L"GetDateFormatEx failed to get the date string, error=" << error << std::endl;
+        }
+    }
+
+    if (length == 0)
+    {
+        std::wostringstream oss;
+        oss << st.wYear << L"-" << st.wMonth << L"-" << st.wDay;
+        date.assign(oss.str());
+    }
+
+    length = ::GetTimeFormatEx(
+        LOCALE_NAME_SYSTEM_DEFAULT,
+        TIME_FORCE24HOURFORMAT,
+        &st,
+        L"HH:mm:ss",
+        nullptr,
+        0);
+
+    if (length == 0)
+    {
+        error = GetLastError();
+        std::wcerr << L"GetTimeFormatEx failed to get the required length, error=" << error << std::endl;
+    }
+    else
+    {
+        time.resize(length);
+
+        length = ::GetTimeFormatEx(
+            LOCALE_NAME_SYSTEM_DEFAULT,
+            TIME_FORCE24HOURFORMAT,
+            &st,
+            L"HH:mm:ss",
+            const_cast<wchar_t*>(time.c_str()),
+            length);
+
+        if (length == 0)
+        {
+            error = GetLastError();
+            std::wcerr << L"GetTimeFormatEx failed to get the time string, error=" << error << std::endl;
+        }
+    }
+
+    if (length == 0)
+    {
+        std::wostringstream oss;
+        oss << st.wHour << L"-" << st.wMinute << L"-" << st.wSecond << L"-" << st.wMilliseconds;
+        time.assign(oss.str());
+    }
+
+    return date + L" " + time;
+}
+
 
 class IWork
 {
@@ -59,9 +154,10 @@ public:
     virtual void Execute() override
     {
         TRACE_FUNCTION;
-        std::wcout << L"Executing work " << _id << std::endl;
+        std::wcout << L"[Begin] work " << _id << std::endl;
         ::Sleep(2000);
         ::InterlockedIncrement64(&WorkCount);
+        std::wcout << L"[End] work " << _id << std::endl;
     }
 };
 
@@ -326,6 +422,238 @@ public:
     }
 };
 
+class ThreadPool4 : public ThreadPool
+{
+protected:
+    typedef struct _Item
+    {
+        SLIST_ENTRY Link;
+        IWork* Work;
+        ThreadPool4* ThreadPool;
+    } Item, * PItem;
+
+    DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
+    SLIST_HEADER _head;
+
+    PTP_TIMER _timer;
+    volatile LONG64 _pendingCount;
+    volatile LONG64 _runningCount;
+    volatile LONG64 _completeCount;
+    bool _timerFired;
+
+public:
+
+    ThreadPool4() : ThreadPool(), _head{ 0 }, _timer(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0), _timerFired(false)
+    {
+        TRACE_FUNCTION;
+    }
+
+    LONG64 PendingCount() { return _pendingCount; }
+    LONG64 RunningCount() { return _runningCount; }
+    LONG64 CompleteCount() { return _completeCount; }
+
+    static void CALLBACK TimerCallback(
+        PTP_CALLBACK_INSTANCE instance,
+        PVOID context,
+        PTP_TIMER timer)
+    {
+        TRACE_FUNCTION;
+
+        std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
+
+        PSLIST_HEADER head = (PSLIST_HEADER)context;
+        PSLIST_ENTRY entry = ::InterlockedPopEntrySList(head);
+
+        if (entry == nullptr)
+        {
+            std::wcout << L"No pending work to do." << std::endl;
+        }
+        else
+        {
+            PItem item = (PItem)CONTAINING_RECORD(entry, Item, Link);
+            ::InterlockedDecrement64(&item->ThreadPool->_pendingCount);
+            ::InterlockedIncrement64(&item->ThreadPool->_runningCount);
+
+            item->Work->Execute();
+
+            ::InterlockedDecrement64(&item->ThreadPool->_runningCount);
+            ::InterlockedIncrement64(&item->ThreadPool->_completeCount);
+            _aligned_free(item);
+            item = nullptr;
+        }
+    }
+
+    virtual DWORD Init() override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        error = ThreadPool::Init();
+        RETURN_IF_FAILED(error);
+
+        ::InitializeSListHead(&_head);
+
+        _timer = ::CreateThreadpoolTimer(TimerCallback, &_head, &_callbackEnv);
+
+        if (_timer == nullptr)
+        {
+            RETURN_FAILURE(GetLastError());
+        }
+
+        return error;
+    }
+
+    virtual DWORD Submit(IWork* iwork) override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        PItem item = (PItem)_aligned_malloc(sizeof(Item), MEMORY_ALLOCATION_ALIGNMENT);
+
+        if (item == nullptr)
+        {
+            RETURN_FAILURE(ERROR_NOT_ENOUGH_MEMORY);
+        }
+
+        item->Work = iwork;
+        item->ThreadPool = this;
+        ::InterlockedPushEntrySList(&_head, &item->Link);
+        ::InterlockedIncrement64(&_pendingCount);
+
+        if (!_timerFired)
+        {
+            ULARGE_INTEGER ul;
+            ul.QuadPart = -(1000 * 1000 * 10); // 1 second
+            FILETIME due = { ul.LowPart, ul.HighPart };
+            // due in 1 second and repeat every second
+            ::SetThreadpoolTimer(_timer, &due, 1000, 0);
+            _timerFired = true;
+        }
+
+        return error;
+    }
+};
+
+class ThreadPool5 : public ThreadPool
+{
+protected:
+    typedef struct _Item
+    {
+        SLIST_ENTRY Link;
+        IWork* Work;
+        ThreadPool5* ThreadPool;
+    } Item, * PItem;
+
+    DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
+        SLIST_HEADER _head;
+
+    PTP_TIMER _timer;
+    volatile LONG64 _pendingCount;
+    volatile LONG64 _runningCount;
+    volatile LONG64 _completeCount;
+    bool _timerFired;
+
+public:
+
+    ThreadPool5() : ThreadPool(), _head{ 0 }, _timer(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0), _timerFired(false)
+    {
+        TRACE_FUNCTION;
+    }
+
+    LONG64 PendingCount() { return _pendingCount; }
+    LONG64 RunningCount() { return _runningCount; }
+    LONG64 CompleteCount() { return _completeCount; }
+
+    static void CALLBACK TimerCallback(
+        PTP_CALLBACK_INSTANCE instance,
+        PVOID context,
+        PTP_TIMER timer)
+    {
+        TRACE_FUNCTION;
+
+        std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
+
+        PSLIST_HEADER head = (PSLIST_HEADER)context;
+        PSLIST_ENTRY entry = ::InterlockedPopEntrySList(head);
+
+        if (entry == nullptr)
+        {
+            std::wcout << L"No pending work to do." << std::endl;
+        }
+        else
+        {
+            PItem item = (PItem)CONTAINING_RECORD(entry, Item, Link);
+            ::InterlockedDecrement64(&item->ThreadPool->_pendingCount);
+            ::InterlockedIncrement64(&item->ThreadPool->_runningCount);
+
+            item->Work->Execute();
+
+            ::InterlockedDecrement64(&item->ThreadPool->_runningCount);
+            ::InterlockedIncrement64(&item->ThreadPool->_completeCount);
+            _aligned_free(item);
+            item = nullptr;
+
+            ULARGE_INTEGER ul;
+            ul.QuadPart = 0;
+            FILETIME due = { ul.LowPart, ul.HighPart };
+            ::SetThreadpoolTimer(timer, &due, 0, 0);
+        }
+    }
+
+    virtual DWORD Init() override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        error = ThreadPool::Init();
+        RETURN_IF_FAILED(error);
+
+        ::InitializeSListHead(&_head);
+
+        _timer = ::CreateThreadpoolTimer(TimerCallback, &_head, &_callbackEnv);
+
+        if (_timer == nullptr)
+        {
+            RETURN_FAILURE(GetLastError());
+        }
+
+        return error;
+    }
+
+    virtual DWORD Submit(IWork* iwork) override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        PItem item = (PItem)_aligned_malloc(sizeof(Item), MEMORY_ALLOCATION_ALIGNMENT);
+
+        if (item == nullptr)
+        {
+            RETURN_FAILURE(ERROR_NOT_ENOUGH_MEMORY);
+        }
+
+        item->Work = iwork;
+        item->ThreadPool = this;
+        ::InterlockedPushEntrySList(&_head, &item->Link);
+        ::InterlockedIncrement64(&_pendingCount);
+
+        if (!_timerFired)
+        {
+            ULARGE_INTEGER ul;
+            ul.QuadPart = -(1000 * 1000 * 10); // 1 second
+            FILETIME due = { ul.LowPart, ul.HighPart };
+            ::SetThreadpoolTimer(_timer, &due, 0, 0);
+            _timerFired = true;
+        }
+
+        return error;
+    }
+};
+
 class Arg
 {
 private:
@@ -400,7 +728,7 @@ DWORD TestThread(ThreadPool& threadpool)
 void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
-    std::wcout << argv[0] << L" [1|2|3]" << std::endl;
+    std::wcout << argv[0] << L" [1|2|3|4|5]" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -427,6 +755,20 @@ int wmain(int argc, wchar_t* argv[])
         {
             ThreadPool3 threadpool;
             error = TestThread(threadpool);
+        }
+        else if (choice == 4)
+        {
+            ThreadPool4 threadpool;
+            error = TestThread(threadpool);
+            std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
+                << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
+        }
+        else if (choice == 5)
+        {
+            ThreadPool5 threadpool;
+            error = TestThread(threadpool);
+            std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
+                << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
         }
     }
     else

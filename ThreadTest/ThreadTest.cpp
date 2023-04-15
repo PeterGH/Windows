@@ -284,10 +284,10 @@ private:
         SLIST_ENTRY Link;
         IWork* Work;
         ThreadPool2* ThreadPool;
-    } Item, *PItem;
+    } Item, * PItem;
 
     DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
-    SLIST_HEADER _head;
+        SLIST_HEADER _head;
 
     PTP_WORK _work;
     volatile LONG64 _pendingCount;
@@ -433,7 +433,7 @@ protected:
     } Item, * PItem;
 
     DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
-    SLIST_HEADER _head;
+        SLIST_HEADER _head;
 
     PTP_TIMER _timer;
     volatile LONG64 _pendingCount;
@@ -654,6 +654,156 @@ public:
     }
 };
 
+class ThreadPool6 : public ThreadPool
+{
+protected:
+    typedef struct _Item
+    {
+        SLIST_ENTRY Link;
+        IWork* Work;
+        ThreadPool6* ThreadPool;
+    } Item, * PItem;
+
+    DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT)
+        SLIST_HEADER _head;
+
+    PTP_WAIT _wait;
+    volatile LONG64 _pendingCount;
+    volatile LONG64 _runningCount;
+    volatile LONG64 _completeCount;
+
+    HANDLE _handle;
+
+public:
+
+    ThreadPool6() : ThreadPool(), _head{ 0 }, _wait(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0), _handle(INVALID_HANDLE_VALUE)
+    {
+        TRACE_FUNCTION;
+    }
+
+    LONG64 PendingCount() { return _pendingCount; }
+    LONG64 RunningCount() { return _runningCount; }
+    LONG64 CompleteCount() { return _completeCount; }
+
+
+    void SetWait(PTP_WAIT wait = nullptr)
+    {
+        TRACE_FUNCTION;
+
+        ULARGE_INTEGER ul;
+        ul.QuadPart = -(1000 * 1000 * 10); // 1 second
+        FILETIME due = { ul.LowPart, ul.HighPart };
+        ::SetThreadpoolWait(wait == nullptr ? _wait : wait, _handle, &due);
+    }
+
+    void SetEvent()
+    {
+        TRACE_FUNCTION;
+
+        if (!::SetEvent(_handle))
+        {
+            std::wcerr << L"Failed to set event, error=" << GetLastError() << std::endl;
+        }
+    }
+
+    static void CALLBACK WaitCallback(
+        PTP_CALLBACK_INSTANCE instance,
+        PVOID context,
+        PTP_WAIT wait,
+        TP_WAIT_RESULT waitResult)
+    {
+        TRACE_FUNCTION;
+
+        std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
+
+        ThreadPool6* tp = (ThreadPool6*)context;
+
+        switch (waitResult)
+        {
+        case WAIT_OBJECT_0:
+        {
+            PSLIST_ENTRY entry = ::InterlockedPopEntrySList(&tp->_head);
+            while (entry != nullptr)
+            {
+                PItem item = (PItem)CONTAINING_RECORD(entry, Item, Link);
+                ::InterlockedDecrement64(&item->ThreadPool->_pendingCount);
+                ::InterlockedIncrement64(&item->ThreadPool->_runningCount);
+
+                item->Work->Execute();
+
+                ::InterlockedDecrement64(&item->ThreadPool->_runningCount);
+                ::InterlockedIncrement64(&item->ThreadPool->_completeCount);
+                _aligned_free(item);
+                item = nullptr;
+
+                entry = ::InterlockedPopEntrySList(&tp->_head);
+            }
+            if (!ResetEvent(tp->_handle))
+            {
+                std::wcerr << L"Failed to reset event, error=" << GetLastError() << std::endl;
+            }
+        }
+        break;
+        case WAIT_TIMEOUT:
+            std::wcout << L"Wait time out" << std::endl;
+            break;
+        default:
+            break;
+        }
+
+        tp->SetWait(wait);
+    }
+
+    virtual DWORD Init() override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        error = ThreadPool::Init();
+        RETURN_IF_FAILED(error);
+
+        ::InitializeSListHead(&_head);
+
+        _wait = ::CreateThreadpoolWait(WaitCallback, this, &_callbackEnv);
+
+        if (_wait == nullptr)
+        {
+            RETURN_FAILURE(GetLastError());
+        }
+
+        _handle = ::CreateEvent(nullptr, true, false, nullptr); // manual
+
+        if (_handle == nullptr)
+        {
+            RETURN_FAILURE(GetLastError());
+        }
+
+        return error;
+    }
+
+    virtual DWORD Submit(IWork* iwork) override
+    {
+        TRACE_FUNCTION;
+
+        DWORD error = ERROR_SUCCESS;
+
+        PItem item = (PItem)_aligned_malloc(sizeof(Item), MEMORY_ALLOCATION_ALIGNMENT);
+
+        if (item == nullptr)
+        {
+            RETURN_FAILURE(ERROR_NOT_ENOUGH_MEMORY);
+        }
+
+        item->Work = iwork;
+        item->ThreadPool = this;
+        ::InterlockedPushEntrySList(&_head, &item->Link);
+        ::InterlockedIncrement64(&_pendingCount);
+
+        return error;
+    }
+};
+
 class Arg
 {
 private:
@@ -728,7 +878,7 @@ DWORD TestThread(ThreadPool& threadpool)
 void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
-    std::wcout << argv[0] << L" [1|2|3|4|5]" << std::endl;
+    std::wcout << argv[0] << L" [1|2|3|4|5|6]" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -770,6 +920,39 @@ int wmain(int argc, wchar_t* argv[])
             std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
                 << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
         }
+        else if (choice == 6)
+        {
+            DWORD error = ERROR_SUCCESS;
+            ThreadPool6 threadpool;
+
+            error = threadpool.Init();
+            RETURN_IF_FAILED(error);
+
+            threadpool.SetWait();
+
+            Work work[30];
+            for (int i = 0; i < 30; i++)
+            {
+                work[i].SetId(i);
+                threadpool.Submit(&work[i]);
+
+                if (i % 3 == 0)
+                {
+                    ::Sleep(3000);
+                    threadpool.SetEvent();
+                }
+            }
+
+            while (WorkCount < 30)
+            {
+                std::wcout << L"Wait for all works to complete." << std::endl;
+                ::Sleep(1000);
+            }
+
+            std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
+                << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
+        }
+
     }
     else
     {

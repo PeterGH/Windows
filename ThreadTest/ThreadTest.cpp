@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 #define RETURN_IF_FAILED(e) \
     { \
@@ -19,7 +20,9 @@
         return _e; \
     }
 
-#define TRACE_FUNCTION std::wcout << L"[" << GetSystemTimeString() << L"] "<< __FUNCTION__ << std::endl;
+#define BEGIN_FUNCTION std::wcout << L"[" << GetSystemTimeString() << L"][" << ::GetCurrentThreadId() << L"] "<< __FUNCTION__ << L" Begin" << std::endl
+#define TRACE_FUNCTION std::wcout << L"[" << GetSystemTimeString() << L"][" << ::GetCurrentThreadId() << L"] "<< __FUNCTION__ << L": "
+#define END_FUNCTION std::wcout << L"[" << GetSystemTimeString() << L"][" << ::GetCurrentThreadId() << L"] "<< __FUNCTION__ << L" End" << std::endl
 
 std::wstring GetSystemTimeString()
 {
@@ -107,24 +110,25 @@ std::wstring GetSystemTimeString()
     if (length == 0)
     {
         std::wostringstream oss;
-        oss << st.wHour << L"-" << st.wMinute << L"-" << st.wSecond << L"-" << st.wMilliseconds;
+        oss << st.wHour << L":" << st.wMinute << L":" << st.wSecond << L"." << st.wMilliseconds;
         time.assign(oss.str());
     }
 
     return date + L" " + time;
 }
 
-
 class IWork
 {
 public:
     IWork()
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
+        END_FUNCTION;
     };
     virtual ~IWork()
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
+        END_FUNCTION;
     };
     virtual void Execute() = 0;
 };
@@ -135,15 +139,16 @@ class Work : public IWork
 {
 private:
     UINT64 _id;
+    DWORD _sleepms;
 
 public:
-    Work(UINT64 id = 0) : IWork(), _id(id)
+    Work(UINT64 id = 0, DWORD sleepms = 2000) : IWork(), _id(id), _sleepms(sleepms)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
     }
     virtual ~Work()
     {
-        TRACE_FUNCTION
+        BEGIN_FUNCTION;
     }
 
     void SetId(UINT64 id)
@@ -151,13 +156,18 @@ public:
         _id = id;
     }
 
+    void SetSleepMs(DWORD sleepms)
+    {
+        _sleepms = sleepms;
+    }
+
     virtual void Execute() override
     {
-        TRACE_FUNCTION;
-        std::wcout << L"[Begin] work " << _id << std::endl;
-        ::Sleep(2000);
+        BEGIN_FUNCTION;
+        TRACE_FUNCTION << L"Work " << _id << std::endl;
+        ::Sleep(_sleepms);
         ::InterlockedIncrement64(&WorkCount);
-        std::wcout << L"[End] work " << _id << std::endl;
+        END_FUNCTION;
     }
 };
 
@@ -170,7 +180,7 @@ protected:
 
     void Dispose()
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         if (_cleanupGroup != nullptr)
         {
@@ -186,25 +196,27 @@ protected:
         }
 
         ::DestroyThreadpoolEnvironment(&_callbackEnv);
+        END_FUNCTION;
     }
 
 public:
     ThreadPool()
         : _callbackEnv{ 0 }, _pool(nullptr), _cleanupGroup(nullptr)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
+        END_FUNCTION;
     }
 
     virtual ~ThreadPool()
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
         Dispose();
+        END_FUNCTION;
     }
 
     virtual DWORD Init()
     {
-        TRACE_FUNCTION;
-
+        BEGIN_FUNCTION;
         DWORD error = ERROR_SUCCESS;
 
         _cleanupGroup = ::CreateThreadpoolCleanupGroup();
@@ -229,17 +241,32 @@ public:
         }
 
         ::InitializeThreadpoolEnvironment(&_callbackEnv);
-
         ::SetThreadpoolCallbackCleanupGroup(&_callbackEnv, _cleanupGroup, nullptr);
         ::SetThreadpoolCallbackPool(&_callbackEnv, _pool);
 
+        END_FUNCTION;
         return error;
     }
 
     virtual DWORD Submit(IWork* iwork)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
+        END_FUNCTION;
         return ERROR_CALL_NOT_IMPLEMENTED;
+    }
+
+    DWORD CreateThreadPoolIo(HANDLE handle, PTP_WIN32_IO_CALLBACK callback, PVOID context, PTP_IO* io)
+    {
+        BEGIN_FUNCTION;
+        DWORD error = ERROR_SUCCESS;
+        *io = ::CreateThreadpoolIo(handle, callback, context, &_callbackEnv);
+        if (*io == nullptr)
+        {
+            error = GetLastError();
+        }
+
+        END_FUNCTION;
+        return error;
     }
 };
 
@@ -251,7 +278,7 @@ public:
         PVOID context,
         PTP_WORK work)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
         IWork* iwork = (IWork*)context;
         iwork->Execute();
@@ -260,7 +287,7 @@ public:
 
     virtual DWORD Submit(IWork* iwork) override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -298,7 +325,7 @@ public:
 
     ThreadPool2() : ThreadPool(), _head{ 0 }, _work(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
     }
 
     LONG64 PendingCount() { return _pendingCount; }
@@ -310,7 +337,7 @@ public:
         PVOID context,
         PTP_WORK work)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
 
@@ -338,7 +365,7 @@ public:
 
     virtual DWORD Init() override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -359,7 +386,7 @@ public:
 
     virtual DWORD Submit(IWork* iwork) override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -394,7 +421,7 @@ public:
         PVOID context,
         PTP_TIMER timer)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
         std::wcout << L"Start timer instance " << std::hex << instance << std::dec << std::endl;
         IWork* iwork = (IWork*)context;
         iwork->Execute();
@@ -403,7 +430,7 @@ public:
 
     virtual DWORD Submit(IWork* iwork) override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -445,7 +472,7 @@ public:
 
     ThreadPool4() : ThreadPool(), _head{ 0 }, _timer(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0), _timerFired(false)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
     }
 
     LONG64 PendingCount() { return _pendingCount; }
@@ -457,7 +484,7 @@ public:
         PVOID context,
         PTP_TIMER timer)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
 
@@ -485,7 +512,7 @@ public:
 
     virtual DWORD Init() override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -506,7 +533,7 @@ public:
 
     virtual DWORD Submit(IWork* iwork) override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -559,7 +586,7 @@ public:
 
     ThreadPool5() : ThreadPool(), _head{ 0 }, _timer(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0), _timerFired(false)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
     }
 
     LONG64 PendingCount() { return _pendingCount; }
@@ -571,7 +598,7 @@ public:
         PVOID context,
         PTP_TIMER timer)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
 
@@ -604,7 +631,7 @@ public:
 
     virtual DWORD Init() override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -625,7 +652,7 @@ public:
 
     virtual DWORD Submit(IWork* iwork) override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -678,7 +705,7 @@ public:
 
     ThreadPool6() : ThreadPool(), _head{ 0 }, _wait(nullptr), _pendingCount(0), _runningCount(0), _completeCount(0), _handle(INVALID_HANDLE_VALUE)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
     }
 
     LONG64 PendingCount() { return _pendingCount; }
@@ -688,7 +715,7 @@ public:
 
     void SetWait(PTP_WAIT wait = nullptr)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         ULARGE_INTEGER ul;
         ul.QuadPart = -(1000 * 1000 * 10); // 1 second
@@ -698,7 +725,7 @@ public:
 
     void SetEvent()
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         if (!::SetEvent(_handle))
         {
@@ -712,7 +739,7 @@ public:
         PTP_WAIT wait,
         TP_WAIT_RESULT waitResult)
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         std::wcout << L"Start work instance " << std::hex << instance << std::dec << std::endl;
 
@@ -756,7 +783,7 @@ public:
 
     virtual DWORD Init() override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -784,7 +811,7 @@ public:
 
     virtual DWORD Submit(IWork* iwork) override
     {
-        TRACE_FUNCTION;
+        BEGIN_FUNCTION;
 
         DWORD error = ERROR_SUCCESS;
 
@@ -875,10 +902,135 @@ DWORD TestThread(ThreadPool& threadpool)
     return error;
 }
 
+void CALLBACK IoCompletionCallback(
+    PTP_CALLBACK_INSTANCE instance,
+    PVOID context,
+    PVOID overlapped,
+    ULONG ioResult,
+    ULONG_PTR numberOfBytesTransferred,
+    PTP_IO io)
+{
+    BEGIN_FUNCTION;
+    TRACE_FUNCTION << L"IOResult=" << ioResult << L", NumberOfBytesTransferred=" << numberOfBytesTransferred << std::endl;
+    END_FUNCTION;
+}
+
+DWORD TestAsyncCreateFile(Arg& arg)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    if (!arg.HasNext())
+    {
+        RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
+    }
+
+    ThreadPool threadpool;
+    error = threadpool.Init();
+    RETURN_IF_FAILED(error);
+    std::wstring file = arg.NextAsString();
+
+    PTP_IO io;
+    OVERLAPPED ol{ 0 };
+    ol.Offset = 0;
+    ol.OffsetHigh = 0;
+    ol.hEvent = ::CreateEvent(nullptr, true, false, nullptr);
+
+    std::vector<byte> buffer(1024);
+    for (size_t i = 0; i < buffer.size(); i++)
+    {
+        buffer[i] = (byte)i;
+    }
+
+    DWORD numberOfBytesTransferred = 0;
+    HANDLE handle = ::CreateFile(
+        file.c_str(),
+        GENERIC_ALL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED,
+        nullptr);
+
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        error = GetLastError();
+        TRACE_FUNCTION << L" failed to create file " << file << L", error = " << error << std::endl;
+        goto finally;
+    }
+
+    error = threadpool.CreateThreadPoolIo(
+        handle,
+        IoCompletionCallback,
+        &threadpool,
+        &io);
+
+    if (error != ERROR_SUCCESS)
+    {
+        TRACE_FUNCTION << L" failed to create threadpool io, error = " << error << std::endl;
+        goto finally;
+    }
+
+    ::StartThreadpoolIo(io);
+
+    if (::WriteFile(
+        handle,
+        buffer.data(),
+        (DWORD)buffer.size(),
+        nullptr,
+        &ol))
+    {
+        TRACE_FUNCTION << L" WriteFile completed." << std::endl;
+        goto finally;
+    }
+
+    error = GetLastError();
+
+    if (error != ERROR_IO_PENDING)
+    {
+        TRACE_FUNCTION << L" WriteFile failed, error = " << error << std::endl;
+        goto finally;
+    }
+
+    TRACE_FUNCTION << L" WriteFile pending." << std::endl;
+
+    if (!::GetOverlappedResult(
+        handle,
+        &ol,
+        &numberOfBytesTransferred,
+        true))
+    {
+        error = GetLastError();
+        TRACE_FUNCTION << L" GetOverlappedResult failed, error = " << error << std::endl;
+        goto finally;
+    }
+
+    TRACE_FUNCTION << L"GetOverlappedResult completed." << std::endl;
+    TRACE_FUNCTION << L"numberOfBytesTransferred = " << numberOfBytesTransferred << std::endl;
+    TRACE_FUNCTION << L"Overlapped.Internal = " << ol.Internal << std::endl;
+    TRACE_FUNCTION << L"Overlapped.InternalHigh = " << ol.InternalHigh << std::endl;
+    TRACE_FUNCTION << L"Overlapped.Offset  = " << ol.Offset << std::endl;
+    TRACE_FUNCTION << L"Overlapped.OffsetHigh  = " << ol.OffsetHigh << std::endl;    
+
+finally:
+    if (ol.hEvent != NULL)
+    {
+        ::CloseHandle(ol.hEvent);
+        ol.hEvent = NULL;
+    }
+
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        ::CloseHandle(handle);
+        handle = INVALID_HANDLE_VALUE;
+    }
+    return error;
+}
+
 void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" [1|2|3|4|5|6]" << std::endl;
+    std::wcout << argv[0] << L" 7 <file path>" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -952,7 +1104,10 @@ int wmain(int argc, wchar_t* argv[])
             std::wcout << L"ThreadPool[Pending|Running|Complete]Count = ["
                 << threadpool.PendingCount() << L"|" << threadpool.RunningCount() << L"|" << threadpool.CompleteCount() << L"]" << std::endl;
         }
-
+        else if (choice == 7)
+        {
+            error = TestAsyncCreateFile(arg);
+        }
     }
     else
     {

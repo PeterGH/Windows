@@ -1026,11 +1026,163 @@ finally:
     return error;
 }
 
+typedef struct _IoWork
+{
+    OVERLAPPED Overlapped;
+    std::vector<byte> Buffer;
+    _IoWork() : Overlapped{ 0 }, Buffer{} { }
+} IoWork, *PIoWork;
+
+DWORD CloseIoWork(PIoWork& work)
+{
+    DWORD error = ERROR_SUCCESS;
+
+    if (work == nullptr)
+    {
+        return error;
+    }
+
+    if (work->Overlapped.hEvent != NULL)
+    {
+        if (!::CloseHandle(work->Overlapped.hEvent))
+        {
+            error = GetLastError();
+        }
+
+        work->Overlapped.hEvent = NULL;
+    }
+
+    delete work;
+    work = nullptr;
+
+    return error;
+}
+
+volatile static LONG IoWorkCount = 0;
+
+void CALLBACK IoCompletionCallback2(
+    PTP_CALLBACK_INSTANCE instance,
+    PVOID context,
+    PVOID overlapped,
+    ULONG ioResult,
+    ULONG_PTR numberOfBytesTransferred,
+    PTP_IO io)
+{
+    BEGIN_FUNCTION;
+    TRACE_FUNCTION << L"IOResult=" << ioResult << L", NumberOfBytesTransferred=" << numberOfBytesTransferred << std::endl;
+    PIoWork work = (PIoWork)CONTAINING_RECORD(overlapped, IoWork, Overlapped);
+    TRACE_FUNCTION << L"Overlapped.[Internal|InternalHigh|Offset|OffsetHigh] = ["
+        << work->Overlapped.Internal << L"|"
+        << work->Overlapped.InternalHigh << L"|"
+        << work->Overlapped.Offset << L"|"
+        << work->Overlapped.OffsetHigh << L"]" << std::endl;
+    CloseIoWork(work);
+    ::InterlockedDecrement(&IoWorkCount);
+    END_FUNCTION;
+}
+
+DWORD TestAsyncCreateFile2(Arg& arg)
+{
+    DWORD error = ERROR_SUCCESS;
+    PTP_IO io = nullptr;
+
+    if (!arg.HasNext())
+    {
+        RETURN_FAILURE(ERROR_BAD_ARGUMENTS);
+    }
+
+    ThreadPool threadpool;
+    error = threadpool.Init();
+    RETURN_IF_FAILED(error);
+    std::wstring file = arg.NextAsString();
+
+    HANDLE handle = ::CreateFile(
+        file.c_str(),
+        GENERIC_ALL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED,
+        nullptr);
+
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        error = GetLastError();
+        TRACE_FUNCTION << L" failed to create file " << file << L", error = " << error << std::endl;
+        goto finally;
+    }
+
+    error = threadpool.CreateThreadPoolIo(
+        handle,
+        IoCompletionCallback2,
+        &threadpool,
+        &io);
+
+    if (error != ERROR_SUCCESS)
+    {
+        TRACE_FUNCTION << L" failed to create threadpool io, error = " << error << std::endl;
+        goto finally;
+    }
+
+    for (size_t i = 0; i < 1024; i++)
+    {
+        PIoWork work = new IoWork();
+        work->Overlapped.Offset = (DWORD)(1024 * i);
+        work->Overlapped.hEvent = ::CreateEvent(nullptr, true, false, nullptr);
+        work->Buffer.resize(1024);
+        for (size_t j = 0; j < 1024; j++)
+        {
+            work->Buffer[j] = (byte)j;
+        }
+
+        ::StartThreadpoolIo(io);
+
+        if (::WriteFile(
+            handle,
+            work->Buffer.data(),
+            (DWORD)work->Buffer.size(),
+            nullptr,
+            &work->Overlapped))
+        {
+            TRACE_FUNCTION << L" WriteFile[" << i << L"] completed." << std::endl;
+            CloseIoWork(work);
+            continue;
+        }
+
+        error = GetLastError();
+
+        if (error != ERROR_IO_PENDING)
+        {
+            TRACE_FUNCTION << L" WriteFile[" << i << L"] failed, error = " << error << std::endl;
+        }
+        else
+        {
+            ::InterlockedIncrement(&IoWorkCount);
+            TRACE_FUNCTION << L" WriteFile[" << i << L"] pending." << std::endl;
+        }
+    }
+
+    while (IoWorkCount > 0)
+    {
+        TRACE_FUNCTION << " Waiting for " << IoWorkCount << L" IO works." << std::endl;
+        ::Sleep(1000);
+    }
+
+    finally:
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        ::CloseHandle(handle);
+        handle = INVALID_HANDLE_VALUE;
+    }
+    return error;
+}
+
+
 void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" [1|2|3|4|5|6]" << std::endl;
-    std::wcout << argv[0] << L" 7 <file path>" << std::endl;
+    std::wcout << argv[0] << L" [7|8] <file path>" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -1107,6 +1259,10 @@ int wmain(int argc, wchar_t* argv[])
         else if (choice == 7)
         {
             error = TestAsyncCreateFile(arg);
+        }
+        else if (choice == 8)
+        {
+            error = TestAsyncCreateFile2(arg);
         }
     }
     else

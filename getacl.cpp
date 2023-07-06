@@ -316,12 +316,43 @@ bool GetWellKnownSidType(const PSID sid, WELL_KNOWN_SID_TYPE& type, std::wstring
     return false;
 }
 
+std::wstring GetSidNameUseString(SID_NAME_USE use)
+{
+#define RETURN_IF(u) \
+    if (use == u) \
+    { \
+        return L#u; \
+    }
+
+    RETURN_IF(SidTypeUser);
+    RETURN_IF(SidTypeGroup);
+    RETURN_IF(SidTypeDomain);
+    RETURN_IF(SidTypeAlias);
+    RETURN_IF(SidTypeWellKnownGroup);
+    RETURN_IF(SidTypeDeletedAccount);
+    RETURN_IF(SidTypeInvalid);
+    RETURN_IF(SidTypeUnknown);
+    RETURN_IF(SidTypeComputer);
+    RETURN_IF(SidTypeLabel);
+    RETURN_IF(SidTypeLogonSession);
+
+#undef RETURN_IF
+
+    return L"";
+}
+
 DWORD GetSidDescription(PSID sid, BOOL defaulted, std::wstring& description)
 {
     DWORD error = ERROR_SUCCESS;
     LPWSTR sidString = nullptr;
     WELL_KNOWN_SID_TYPE wellKnownSidType;
     std::wstring wellKnownSidTypeString;
+    wchar_t accountName[256]{ 0 };
+    DWORD accountNameSize = 256;
+    wchar_t domainName[256]{ 0 };
+    DWORD domainNameSize = 256;
+    SID_NAME_USE use;
+    std::wstring useString;
     std::wostringstream oss;
 
     if (!::ConvertSidToStringSidW(sid, &sidString))
@@ -330,6 +361,22 @@ DWORD GetSidDescription(PSID sid, BOOL defaulted, std::wstring& description)
         std::wcerr << L"ConvertSidToStringSidW(0x" << std::hex << sid << std::dec << L" failed with error " << error << std::endl;
         goto finally;
     }
+
+    if (!::LookupAccountSidW(
+            nullptr,
+            sid,
+            accountName,
+            &accountNameSize,
+            domainName,
+            &domainNameSize,
+            &use))
+    {
+        error = ::GetLastError();
+        std::wcerr << L"LookupAccountSidW(0x" << std::hex << sid << std::dec << L" failed with error " << error << std::endl;
+        goto finally;
+    }
+
+    useString = GetSidNameUseString(use);
 
     oss << L"0x" << std::hex << sid << std::dec;
 
@@ -347,6 +394,8 @@ DWORD GetSidDescription(PSID sid, BOOL defaulted, std::wstring& description)
     {
         oss << L"|" << wellKnownSidTypeString << L"(" << wellKnownSidType << L")";
     }
+
+    oss << L"|" << domainName << L"\\" << accountName << L"|" << useString << L"(" << use << L")";
 
     description = oss.str();
 
@@ -376,6 +425,8 @@ DWORD ProcessFile(const std::wstring& file)
     PACL dacl = nullptr;
     BOOL daclPresent = FALSE;
     BOOL daclDefaulted = FALSE;
+    ACL_REVISION_INFORMATION daclRevision{ 0 };
+    ACL_SIZE_INFORMATION daclSize{ 0 };
     PACL sacl = nullptr;
     BOOL saclPresent = FALSE;
     BOOL saclDefaulted = FALSE;
@@ -556,6 +607,30 @@ DWORD ProcessFile(const std::wstring& file)
 
     std::wcout << std::endl;
 
+    if (dacl != nullptr)
+    {
+
+        if (!::GetAclInformation(dacl, &daclRevision, sizeof(ACL_REVISION_INFORMATION), AclRevisionInformation))
+        {
+            error = ::GetLastError();
+            std::wcerr << L"GetAclInformation(0x" << std::hex << dacl << std::dec << L" failed with error " << error << std::endl;
+            goto finally;
+        }
+
+        if (!::GetAclInformation(dacl, &daclSize, sizeof(ACL_SIZE_INFORMATION), AclSizeInformation))
+        {
+            error = ::GetLastError();
+            std::wcerr << L"GetAclInformation(0x" << std::hex << dacl << std::dec << L" failed with error " << error << std::endl;
+            goto finally;
+        }
+
+        std::wcout << L"  AclRevision: " << dacl->AclRevision << L"|" << daclRevision.AclRevision << std::endl;
+        std::wcout << L"  Sbz1: " << dacl->Sbz1 << std::endl;
+        std::wcout << L"  AclSize: " << dacl->AclSize << L"|Free=" << daclSize.AclBytesFree << L"|InUse=" << daclSize.AclBytesInUse << std::endl;
+        std::wcout << L"  AceCount: " << dacl->AceCount << L"|" << daclSize.AceCount << std::endl;
+        std::wcout << L"  Sbz2: " << dacl->Sbz2 << std::endl;
+    }
+
     if (!::GetSecurityDescriptorSacl(
             securityDescriptor,
             &saclPresent,
@@ -580,6 +655,15 @@ DWORD ProcessFile(const std::wstring& file)
     }
 
     std::wcout << std::endl;
+
+    if (sacl != nullptr)
+    {
+        std::wcout << L"  AclRevision: " << sacl->AclRevision << std::endl;
+        std::wcout << L"  Sbz1: " << sacl->Sbz1 << std::endl;
+        std::wcout << L"  AclSize: " << sacl->AclSize << std::endl;
+        std::wcout << L"  AceCount: " << sacl->AceCount << std::endl;
+        std::wcout << L"  Sbz2: " << sacl->Sbz2 << std::endl;
+    }
 
 finally:
 

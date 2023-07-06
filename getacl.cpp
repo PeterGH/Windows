@@ -406,6 +406,27 @@ finally:
     return error;
 }
 
+DWORD GetAceDescription(PACE_HEADER header, std::wstring& description)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wostringstream oss;
+
+    if (header == nullptr)
+    {
+        error = ERROR_BAD_ARGUMENTS;
+        goto finally;
+    }
+
+    oss << L"Type:" << header->AceType;
+    oss << L"|Flags:" << header->AceFlags;
+    oss << L"|Size:" << header->AceSize;
+
+    description = oss.str();
+
+finally:
+    return error;
+}
+
 DWORD ProcessFile(const std::wstring& file)
 {
     DWORD error = ERROR_SUCCESS;
@@ -430,6 +451,8 @@ DWORD ProcessFile(const std::wstring& file)
     PACL sacl = nullptr;
     BOOL saclPresent = FALSE;
     BOOL saclDefaulted = FALSE;
+    PACE_HEADER ace = nullptr;
+    std::wstring aceDescription;
 
     fileHandle = ::CreateFileW(
         file.c_str(),
@@ -613,14 +636,14 @@ DWORD ProcessFile(const std::wstring& file)
         if (!::GetAclInformation(dacl, &daclRevision, sizeof(ACL_REVISION_INFORMATION), AclRevisionInformation))
         {
             error = ::GetLastError();
-            std::wcerr << L"GetAclInformation(0x" << std::hex << dacl << std::dec << L" failed with error " << error << std::endl;
+            std::wcerr << L"GetAclInformation(0x" << std::hex << dacl << std::dec << L") failed with error " << error << std::endl;
             goto finally;
         }
 
         if (!::GetAclInformation(dacl, &daclSize, sizeof(ACL_SIZE_INFORMATION), AclSizeInformation))
         {
             error = ::GetLastError();
-            std::wcerr << L"GetAclInformation(0x" << std::hex << dacl << std::dec << L" failed with error " << error << std::endl;
+            std::wcerr << L"GetAclInformation(0x" << std::hex << dacl << std::dec << L") failed with error " << error << std::endl;
             goto finally;
         }
 
@@ -629,6 +652,25 @@ DWORD ProcessFile(const std::wstring& file)
         std::wcout << L"  AclSize: " << dacl->AclSize << L"|Free=" << daclSize.AclBytesFree << L"|InUse=" << daclSize.AclBytesInUse << std::endl;
         std::wcout << L"  AceCount: " << dacl->AceCount << L"|" << daclSize.AceCount << std::endl;
         std::wcout << L"  Sbz2: " << dacl->Sbz2 << std::endl;
+
+        for (DWORD i = 0; i < daclSize.AceCount; i++)
+        {
+            if (!::GetAce(dacl, i, (LPVOID*)&ace))
+            {
+                error = ::GetLastError();
+                std::wcerr << L"GetAce(0x" << std::hex << dacl << std::dec << L", " << i << L") failed with error " << error << std::endl;
+                goto finally;
+            }
+
+            error = GetAceDescription(ace, aceDescription);
+            if (error != ERROR_SUCCESS)
+            {
+                std::wcerr << L"GetAceDescription(0x" << std::hex << dacl << std::dec << L", " << i << L") failed with error " << error << std::endl;
+                goto finally;
+            }
+
+            std::wcout << L"  ACE[" << i << L"]: " << aceDescription << std::endl;
+        }
     }
 
     if (!::GetSecurityDescriptorSacl(
@@ -638,7 +680,7 @@ DWORD ProcessFile(const std::wstring& file)
             &saclDefaulted))
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSecurityDescriptorSacl(0x" << std::hex << securityDescriptor << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSecurityDescriptorSacl(0x" << std::hex << securityDescriptor << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 

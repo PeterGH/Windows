@@ -406,10 +406,78 @@ finally:
     return error;
 }
 
+DWORD GetAceDescription(PACCESS_ALLOWED_ACE ace, std::wstring& description)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wostringstream oss;
+    std::wstring sidDescription;
+
+    if (ace == nullptr)
+    {
+        error = ERROR_BAD_ARGUMENTS;
+        goto finally;
+    }
+
+    oss << L"    AccessMask: 0x" << std::hex << ace->Mask << std::dec;
+
+#define OUT_MASK(x) \
+    if (ace->Mask & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+    // Generic rights
+    OUT_MASK(GENERIC_READ);
+    OUT_MASK(GENERIC_WRITE);
+    OUT_MASK(GENERIC_EXECUTE);
+    OUT_MASK(GENERIC_ALL);
+    OUT_MASK(MAXIMUM_ALLOWED);
+    OUT_MASK(ACCESS_SYSTEM_SECURITY);
+    // Standard rights
+    OUT_MASK(SYNCHRONIZE);
+    OUT_MASK(WRITE_OWNER);
+    OUT_MASK(WRITE_DAC);
+    OUT_MASK(READ_CONTROL);
+    OUT_MASK(DELETE);
+    // File rights
+    OUT_MASK(FILE_WRITE_ATTRIBUTES);
+    OUT_MASK(FILE_READ_ATTRIBUTES);
+    OUT_MASK(FILE_DELETE_CHILD);
+    OUT_MASK(FILE_EXECUTE);
+    OUT_MASK(FILE_TRAVERSE);
+    OUT_MASK(FILE_WRITE_EA);
+    OUT_MASK(FILE_READ_EA);
+    OUT_MASK(FILE_APPEND_DATA);
+    OUT_MASK(FILE_ADD_SUBDIRECTORY);
+    OUT_MASK(FILE_CREATE_PIPE_INSTANCE);
+    OUT_MASK(FILE_WRITE_DATA);
+    OUT_MASK(FILE_ADD_FILE);
+    OUT_MASK(FILE_READ_DATA);
+    OUT_MASK(FILE_LIST_DIRECTORY);
+
+#undef OUT_MASK
+
+    oss << std::endl;
+
+    error = GetSidDescription(&ace->SidStart, false, sidDescription);
+    if (error != ERROR_SUCCESS)
+    {
+        goto finally;
+    }
+
+    oss << L"    Sid: " << sidDescription;
+
+    description = oss.str();
+
+finally:
+    return error;
+}
+
 DWORD GetAceDescription(PACE_HEADER header, std::wstring& description)
 {
     DWORD error = ERROR_SUCCESS;
     std::wostringstream oss;
+    std::wstring aceDescription;
 
     if (header == nullptr)
     {
@@ -417,9 +485,65 @@ DWORD GetAceDescription(PACE_HEADER header, std::wstring& description)
         goto finally;
     }
 
-    oss << L"Type:" << header->AceType;
-    oss << L"|Flags:" << header->AceFlags;
-    oss << L"|Size:" << header->AceSize;
+    oss << L"    Type: " << header->AceType << std::endl;
+    oss << L"    Flags: 0x" << std::hex << header->AceFlags << std::dec;
+
+#define OUT_ATTRIBUTE(x) \
+        if (header->AceFlags & (x)) \
+        { \
+            oss << L"|" << #x; \
+        }
+
+    OUT_ATTRIBUTE(FAILED_ACCESS_ACE_FLAG);
+    OUT_ATTRIBUTE(SUCCESSFUL_ACCESS_ACE_FLAG);
+    OUT_ATTRIBUTE(INHERITED_ACE);
+    OUT_ATTRIBUTE(INHERIT_ONLY_ACE);
+    OUT_ATTRIBUTE(NO_PROPAGATE_INHERIT_ACE);
+    OUT_ATTRIBUTE(CONTAINER_INHERIT_ACE);
+    OUT_ATTRIBUTE(OBJECT_INHERIT_ACE);
+
+#undef OUT_ATTRIBUTE
+
+    oss << std::endl;
+
+    oss << L"    Size: " << header->AceSize << std::endl;
+
+    switch (header->AceType)
+    {
+    case ACCESS_ALLOWED_ACE_TYPE:
+        error = GetAceDescription((PACCESS_ALLOWED_ACE)header, aceDescription);
+        break;
+    case ACCESS_DENIED_ACE_TYPE:
+    case SYSTEM_AUDIT_ACE_TYPE:
+    case SYSTEM_ALARM_ACE_TYPE:
+    case ACCESS_ALLOWED_COMPOUND_ACE_TYPE:
+    case ACCESS_ALLOWED_OBJECT_ACE_TYPE:
+    case ACCESS_DENIED_OBJECT_ACE_TYPE:
+    case SYSTEM_AUDIT_OBJECT_ACE_TYPE:
+    case SYSTEM_ALARM_OBJECT_ACE_TYPE:
+    case ACCESS_ALLOWED_CALLBACK_ACE_TYPE:
+    case ACCESS_DENIED_CALLBACK_ACE_TYPE:
+    case ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE:
+    case ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE:
+    case SYSTEM_AUDIT_CALLBACK_ACE_TYPE:
+    case SYSTEM_ALARM_CALLBACK_ACE_TYPE:
+    case SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE:
+    case SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE:
+    case SYSTEM_MANDATORY_LABEL_ACE_TYPE:
+    case SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE:
+    case SYSTEM_SCOPED_POLICY_ID_ACE_TYPE:
+    case SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE:
+    case SYSTEM_ACCESS_FILTER_ACE_TYPE:
+    default:
+        break;
+    }
+
+    if (error != ERROR_SUCCESS)
+    {
+        goto finally;
+    }
+
+    oss << aceDescription;
 
     description = oss.str();
 
@@ -669,7 +793,8 @@ DWORD ProcessFile(const std::wstring& file)
                 goto finally;
             }
 
-            std::wcout << L"  ACE[" << i << L"]: " << aceDescription << std::endl;
+            std::wcout << L"  ACE[" << i << L"]:" << std::endl;
+            std::wcout << aceDescription << std::endl;
         }
     }
 

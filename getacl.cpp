@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <AclAPI.h>
+#include <combaseapi.h>
 #include <sddl.h>
 #include <iostream>
 #include <sstream>
@@ -14,7 +15,7 @@ DWORD LocalFreeIf(HLOCAL buffer)
         if (::LocalFree(buffer) != NULL)
         {
             error = ::GetLastError();
-            std::wcerr << L"LocalFree(0x" << std::hex << buffer << std::dec << L" failed with error " << error << std::endl;
+            std::wcerr << L"LocalFree(0x" << std::hex << buffer << std::dec << L") failed with error " << error << std::endl;
         }
     }
 
@@ -30,7 +31,7 @@ DWORD CloseHandleIf(HANDLE handle)
         if (!::CloseHandle(handle))
         {
             error = ::GetLastError();
-            std::wcerr << L"CloseHandle(0x" << std::hex << handle << std::dec << L" failed with error " << error << std::endl;
+            std::wcerr << L"CloseHandle(0x" << std::hex << handle << std::dec << L") failed with error " << error << std::endl;
         }
     }
 
@@ -358,7 +359,7 @@ DWORD GetSidDescription(PSID sid, BOOL defaulted, std::wstring& description)
     if (!::ConvertSidToStringSidW(sid, &sidString))
     {
         error = ::GetLastError();
-        std::wcerr << L"ConvertSidToStringSidW(0x" << std::hex << sid << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"ConvertSidToStringSidW(0x" << std::hex << sid << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -372,7 +373,7 @@ DWORD GetSidDescription(PSID sid, BOOL defaulted, std::wstring& description)
             &use))
     {
         error = ::GetLastError();
-        std::wcerr << L"LookupAccountSidW(0x" << std::hex << sid << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"LookupAccountSidW(0x" << std::hex << sid << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -406,22 +407,13 @@ finally:
     return error;
 }
 
-DWORD GetAceDescription(PACCESS_ALLOWED_ACE ace, std::wstring& description)
+std::wstring GetAccessMaskDescription(ACCESS_MASK mask)
 {
-    DWORD error = ERROR_SUCCESS;
     std::wostringstream oss;
-    std::wstring sidDescription;
-
-    if (ace == nullptr)
-    {
-        error = ERROR_BAD_ARGUMENTS;
-        goto finally;
-    }
-
-    oss << L"    AccessMask: 0x" << std::hex << ace->Mask << std::dec;
+    oss << L"0x" << std::hex << mask << std::dec;
 
 #define OUT_MASK(x) \
-    if (ace->Mask & (x)) \
+    if (mask & (x)) \
     { \
         oss << L"|" << #x; \
     }
@@ -457,6 +449,325 @@ DWORD GetAceDescription(PACCESS_ALLOWED_ACE ace, std::wstring& description)
 
 #undef OUT_MASK
 
+    return oss.str();
+}
+
+DWORD GetAceDescription(ACCESS_MASK mask, PSID sid, std::wstring& description)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wostringstream oss;
+    std::wstring sidDescription;
+
+    oss << L"    AccessMask: " << GetAccessMaskDescription(mask) << std::endl;
+
+    error = GetSidDescription(sid, false, sidDescription);
+    if (error != ERROR_SUCCESS)
+    {
+        goto finally;
+    }
+
+    oss << L"    Sid: " << sidDescription;
+
+    description = oss.str();
+
+finally:
+    return error;
+}
+
+DWORD GetAceDescription(PACCESS_ALLOWED_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PACCESS_DENIED_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_AUDIT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_ALARM_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PACCESS_ALLOWED_CALLBACK_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PACCESS_DENIED_CALLBACK_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_AUDIT_CALLBACK_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_ALARM_CALLBACK_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_RESOURCE_ATTRIBUTE_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GuidToString(GUID* guid, std::wstring& guidString)
+{
+    const int bufferSize = 40;
+    OLECHAR buffer[bufferSize];
+    int guidSize = 0;
+
+    guidSize = StringFromGUID2(*guid, buffer, bufferSize);
+    if (guidSize == 0)
+    {
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    guidString.assign(buffer);
+    return ERROR_SUCCESS;
+}
+
+DWORD GetAceDescription(ACCESS_MASK mask, DWORD flags, GUID* objectType, GUID* inheritedObjectType, PSID sid, std::wstring& description)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wostringstream oss;
+    std::wstring guidString;
+    std::wstring sidDescription;
+
+    oss << L"    AccessMask: " << GetAccessMaskDescription(mask) << std::endl;
+
+    oss << L"    Flags: 0x" << std::hex << flags << std::dec;
+
+    if (flags)
+    {
+#define OUT_FLAG(x) \
+    if (flags & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+        OUT_FLAG(ACE_OBJECT_TYPE_PRESENT);
+        OUT_FLAG(ACE_INHERITED_OBJECT_TYPE_PRESENT);
+
+#undef OUT_FLAG
+    }
+
+    oss << std::endl;
+
+    if (flags == 0)
+    {
+        sid = (PSID)objectType;
+        objectType = nullptr;
+        inheritedObjectType = nullptr;
+    }
+    else if (flags == ACE_OBJECT_TYPE_PRESENT)
+    {
+        sid = (PSID)inheritedObjectType;
+        inheritedObjectType = nullptr;
+    }
+    else if (flags == ACE_INHERITED_OBJECT_TYPE_PRESENT)
+    {
+        sid = (PSID)inheritedObjectType;
+        inheritedObjectType = objectType;
+        objectType = nullptr;
+    }
+    else // flags == ACE_INHERITED_OBJECT_TYPE_PRESENT | ACE_OBJECT_TYPE_PRESENT
+    {
+        ;
+    }
+
+    if (objectType != nullptr)
+    {
+        error = GuidToString(objectType, guidString);
+        if (error != ERROR_SUCCESS)
+        {
+            goto finally;
+        }
+
+        oss << L"    ObjectType: " << guidString << std::endl;
+    }
+
+    if (inheritedObjectType != nullptr)
+    {
+        error = GuidToString(inheritedObjectType, guidString);
+        if (error != ERROR_SUCCESS)
+        {
+            goto finally;
+        }
+
+        oss << L"    InheritedObjectType: " << guidString << std::endl;
+    }
+
+    if (sid != nullptr)
+    {
+        error = GetSidDescription(sid, false, sidDescription);
+        if (error != ERROR_SUCCESS)
+        {
+            goto finally;
+        }
+
+        oss << L"    Sid: " << sidDescription;
+    }
+
+    description = oss.str();
+
+finally:
+    return error;
+}
+
+DWORD GetAceDescription(PACCESS_ALLOWED_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PACCESS_DENIED_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_AUDIT_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_ALARM_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PACCESS_ALLOWED_CALLBACK_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PACCESS_DENIED_CALLBACK_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_AUDIT_CALLBACK_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_ALARM_CALLBACK_OBJECT_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, ace->Flags, &ace->ObjectType, &ace->InheritedObjectType, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_MANDATORY_LABEL_ACE ace, std::wstring& description)
+{
+    DWORD error = ERROR_SUCCESS;
+    std::wostringstream oss;
+    std::wstring sidDescription;
+
+    oss << L"    Mask: 0x" << std::hex << ace->Mask << std::dec;
+
+#define OUT_MASK(x) \
+    if (ace->Mask & (x)) \
+    { \
+        oss << L"|" << #x; \
+    }
+
+    OUT_MASK(SYSTEM_MANDATORY_LABEL_NO_EXECUTE_UP);
+    OUT_MASK(SYSTEM_MANDATORY_LABEL_NO_READ_UP);
+    OUT_MASK(SYSTEM_MANDATORY_LABEL_NO_WRITE_UP);
+
+#undef OUT_MASK
+
     oss << std::endl;
 
     error = GetSidDescription(&ace->SidStart, false, sidDescription);
@@ -485,24 +796,57 @@ DWORD GetAceDescription(PACE_HEADER header, std::wstring& description)
         goto finally;
     }
 
-    oss << L"    Type: " << header->AceType << std::endl;
+    oss << L"    Type: " << header->AceType;
+
+#define OUT_TYPE(x) \
+        if (header->AceType == (x)) \
+        { \
+            oss << L"|" << #x; \
+        }
+
+    OUT_TYPE(ACCESS_ALLOWED_ACE_TYPE);
+    OUT_TYPE(ACCESS_DENIED_ACE_TYPE);
+    OUT_TYPE(SYSTEM_AUDIT_ACE_TYPE);
+    OUT_TYPE(SYSTEM_ALARM_ACE_TYPE);
+    OUT_TYPE(ACCESS_ALLOWED_COMPOUND_ACE_TYPE);
+    OUT_TYPE(ACCESS_ALLOWED_OBJECT_ACE_TYPE);
+    OUT_TYPE(ACCESS_DENIED_OBJECT_ACE_TYPE);
+    OUT_TYPE(SYSTEM_AUDIT_OBJECT_ACE_TYPE);
+    OUT_TYPE(SYSTEM_ALARM_OBJECT_ACE_TYPE);
+    OUT_TYPE(ACCESS_ALLOWED_CALLBACK_ACE_TYPE);
+    OUT_TYPE(ACCESS_DENIED_CALLBACK_ACE_TYPE);
+    OUT_TYPE(ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE);
+    OUT_TYPE(ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE);
+    OUT_TYPE(SYSTEM_AUDIT_CALLBACK_ACE_TYPE);
+    OUT_TYPE(SYSTEM_ALARM_CALLBACK_ACE_TYPE);
+    OUT_TYPE(SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE);
+    OUT_TYPE(SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE);
+    OUT_TYPE(SYSTEM_MANDATORY_LABEL_ACE_TYPE);
+    OUT_TYPE(SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE);
+    OUT_TYPE(SYSTEM_SCOPED_POLICY_ID_ACE_TYPE);
+    OUT_TYPE(SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE);
+    OUT_TYPE(SYSTEM_ACCESS_FILTER_ACE_TYPE);
+
+#undef OUT_TYPE
+
+    oss << std::endl;
     oss << L"    Flags: 0x" << std::hex << header->AceFlags << std::dec;
 
-#define OUT_ATTRIBUTE(x) \
+#define OUT_FLAG(x) \
         if (header->AceFlags & (x)) \
         { \
             oss << L"|" << #x; \
         }
 
-    OUT_ATTRIBUTE(FAILED_ACCESS_ACE_FLAG);
-    OUT_ATTRIBUTE(SUCCESSFUL_ACCESS_ACE_FLAG);
-    OUT_ATTRIBUTE(INHERITED_ACE);
-    OUT_ATTRIBUTE(INHERIT_ONLY_ACE);
-    OUT_ATTRIBUTE(NO_PROPAGATE_INHERIT_ACE);
-    OUT_ATTRIBUTE(CONTAINER_INHERIT_ACE);
-    OUT_ATTRIBUTE(OBJECT_INHERIT_ACE);
+    OUT_FLAG(FAILED_ACCESS_ACE_FLAG);
+    OUT_FLAG(SUCCESSFUL_ACCESS_ACE_FLAG);
+    OUT_FLAG(INHERITED_ACE);
+    OUT_FLAG(INHERIT_ONLY_ACE);
+    OUT_FLAG(NO_PROPAGATE_INHERIT_ACE);
+    OUT_FLAG(CONTAINER_INHERIT_ACE);
+    OUT_FLAG(OBJECT_INHERIT_ACE);
 
-#undef OUT_ATTRIBUTE
+#undef OUT_FLAG
 
     oss << std::endl;
 
@@ -514,23 +858,59 @@ DWORD GetAceDescription(PACE_HEADER header, std::wstring& description)
         error = GetAceDescription((PACCESS_ALLOWED_ACE)header, aceDescription);
         break;
     case ACCESS_DENIED_ACE_TYPE:
+        error = GetAceDescription((PACCESS_DENIED_ACE)header, aceDescription);
+        break;
     case SYSTEM_AUDIT_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_AUDIT_ACE)header, aceDescription);
+        break;
     case SYSTEM_ALARM_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_ALARM_ACE)header, aceDescription);
+        break;
     case ACCESS_ALLOWED_COMPOUND_ACE_TYPE:
+        // reserved
+        break;
     case ACCESS_ALLOWED_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PACCESS_ALLOWED_OBJECT_ACE)header, aceDescription);
+        break;
     case ACCESS_DENIED_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PACCESS_DENIED_OBJECT_ACE)header, aceDescription);
+        break;
     case SYSTEM_AUDIT_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_AUDIT_OBJECT_ACE)header, aceDescription);
+        break;
     case SYSTEM_ALARM_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_ALARM_OBJECT_ACE)header, aceDescription);
+        break;
     case ACCESS_ALLOWED_CALLBACK_ACE_TYPE:
+        error = GetAceDescription((PACCESS_ALLOWED_CALLBACK_ACE)header, aceDescription);
+        break;
     case ACCESS_DENIED_CALLBACK_ACE_TYPE:
+        error = GetAceDescription((PACCESS_DENIED_CALLBACK_ACE)header, aceDescription);
+        break;
     case ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PACCESS_ALLOWED_CALLBACK_OBJECT_ACE)header, aceDescription);
+        break;
     case ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PACCESS_DENIED_CALLBACK_OBJECT_ACE)header, aceDescription);
+        break;
     case SYSTEM_AUDIT_CALLBACK_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_AUDIT_CALLBACK_ACE)header, aceDescription);
+        break;
     case SYSTEM_ALARM_CALLBACK_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_ALARM_CALLBACK_ACE)header, aceDescription);
+        break;
     case SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_AUDIT_CALLBACK_OBJECT_ACE)header, aceDescription);
+        break;
     case SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_ALARM_CALLBACK_OBJECT_ACE)header, aceDescription);
+        break;
     case SYSTEM_MANDATORY_LABEL_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_MANDATORY_LABEL_ACE)header, aceDescription);
+        break;
     case SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_RESOURCE_ATTRIBUTE_ACE)header, aceDescription);
+        break;
     case SYSTEM_SCOPED_POLICY_ID_ACE_TYPE:
     case SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE:
     case SYSTEM_ACCESS_FILTER_ACE_TYPE:
@@ -642,7 +1022,7 @@ DWORD ProcessFile(const std::wstring& file)
             &securityDescriptorStringLength))
     {
         error = ::GetLastError();
-        std::wcerr << L"ConvertSecurityDescriptorToStringSecurityDescriptorW(0x" << std::hex << securityDescriptor << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"ConvertSecurityDescriptorToStringSecurityDescriptorW(0x" << std::hex << securityDescriptor << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -657,7 +1037,7 @@ DWORD ProcessFile(const std::wstring& file)
             &revision))
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSecurityDescriptorControl(0x" << std::hex << securityDescriptor << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSecurityDescriptorControl(0x" << std::hex << securityDescriptor << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -695,7 +1075,7 @@ DWORD ProcessFile(const std::wstring& file)
             &ownerDefaulted))
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSecurityDescriptorOwner(0x" << std::hex << securityDescriptor << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSecurityDescriptorOwner(0x" << std::hex << securityDescriptor << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -703,7 +1083,7 @@ DWORD ProcessFile(const std::wstring& file)
     if (error != ERROR_SUCCESS)
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSidDescription(0x" << std::hex << owner << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSidDescription(0x" << std::hex << owner << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -715,7 +1095,7 @@ DWORD ProcessFile(const std::wstring& file)
             &groupDefaulted))
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSecurityDescriptorGroup(0x" << std::hex << securityDescriptor << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSecurityDescriptorGroup(0x" << std::hex << securityDescriptor << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -723,7 +1103,7 @@ DWORD ProcessFile(const std::wstring& file)
     if (error != ERROR_SUCCESS)
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSidDescription(0x" << std::hex << group << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSidDescription(0x" << std::hex << group << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 
@@ -736,7 +1116,7 @@ DWORD ProcessFile(const std::wstring& file)
             &daclDefaulted))
     {
         error = ::GetLastError();
-        std::wcerr << L"GetSecurityDescriptorDacl(0x" << std::hex << securityDescriptor << std::dec << L" failed with error " << error << std::endl;
+        std::wcerr << L"GetSecurityDescriptorDacl(0x" << std::hex << securityDescriptor << std::dec << L") failed with error " << error << std::endl;
         goto finally;
     }
 

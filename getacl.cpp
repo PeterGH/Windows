@@ -561,6 +561,38 @@ DWORD GetAceDescription(PSYSTEM_RESOURCE_ATTRIBUTE_ACE ace, std::wstring& descri
         return ERROR_BAD_ARGUMENTS;
     }
 
+    // After the sid there is a CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1 structure
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_SCOPED_POLICY_ID_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_PROCESS_TRUST_LABEL_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    return GetAceDescription(ace->Mask, &ace->SidStart, description);
+}
+
+DWORD GetAceDescription(PSYSTEM_ACCESS_FILTER_ACE ace, std::wstring& description)
+{
+    if (ace == nullptr)
+    {
+        return ERROR_BAD_ARGUMENTS;
+    }
+
+    // After the sid there is a filter condition structure
     return GetAceDescription(ace->Mask, &ace->SidStart, description);
 }
 
@@ -912,8 +944,13 @@ DWORD GetAceDescription(PACE_HEADER header, std::wstring& description)
         error = GetAceDescription((PSYSTEM_RESOURCE_ATTRIBUTE_ACE)header, aceDescription);
         break;
     case SYSTEM_SCOPED_POLICY_ID_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_SCOPED_POLICY_ID_ACE)header, aceDescription);
+        break;
     case SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_PROCESS_TRUST_LABEL_ACE)header, aceDescription);
+        break;
     case SYSTEM_ACCESS_FILTER_ACE_TYPE:
+        error = GetAceDescription((PSYSTEM_ACCESS_FILTER_ACE)header, aceDescription);
     default:
         break;
     }

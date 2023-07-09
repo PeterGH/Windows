@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 DWORD LocalFreeIf(HLOCAL buffer)
 {
@@ -1262,6 +1263,7 @@ void Usage(int argc, wchar_t* argv[])
 {
     std::wcout << L"Usage:" << std::endl;
     std::wcout << argv[0] << L" <file path>" << std::endl;
+    std::wcout << argv[0] << L" <directory path> -d" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -1269,6 +1271,13 @@ int wmain(int argc, wchar_t* argv[])
     DWORD error = ERROR_SUCCESS;
     bool impersonating = false;
     HANDLE threadTokenHandle = INVALID_HANDLE_VALUE;
+    HANDLE findHandle = INVALID_HANDLE_VALUE;
+    WIN32_FIND_DATA findData{ 0 };
+    std::vector<std::wstring> directories;
+    std::wstring parent;
+    std::wstring findPattern;
+    std::wstring filePath;
+    size_t fileNameLength = 0;
 
     if (argc < 2)
     {
@@ -1304,9 +1313,86 @@ int wmain(int argc, wchar_t* argv[])
         goto finally;
     }
 
-    error = ProcessFile(argv[1]);
+    if (argc == 2 || argv[2][0] != L'-' || argv[2][1] != L'd')
+    {
+        error = ProcessFile(argv[1]);
+    }
+    else
+    {
+        directories.push_back(argv[1]);
+
+        while (!directories.empty())
+        {
+            parent = directories.front();
+            directories.erase(directories.begin());
+
+            findPattern = parent + L"\\*";
+            findHandle = ::FindFirstFileW(findPattern.c_str(), &findData);
+
+            if (findHandle == INVALID_HANDLE_VALUE)
+            {
+                error = ::GetLastError();
+                std::wcerr << L"FindFirstFile(" << findPattern << L") failed with error " << error << std::endl;
+            }
+            else
+            {
+                do
+                {
+                    fileNameLength = wcslen(findData.cFileName);
+
+                    if (fileNameLength == 1 && findData.cFileName[0] == L'.')
+                    {
+                        continue;
+                    }
+                    else if (fileNameLength == 2 && findData.cFileName[0] == L'.' && findData.cFileName[1] == L'.')
+                    {
+                        continue;
+                    }
+
+                    filePath = parent + L"\\" + findData.cFileName;
+
+                    if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                    {
+                        directories.push_back(filePath);
+                    }
+                    else
+                    {
+                        error = ProcessFile(filePath);
+                    }
+
+                } while (::FindNextFileW(findHandle, &findData));
+
+                error = ::GetLastError();
+                if (error == ERROR_NO_MORE_FILES)
+                {
+                    error = ERROR_SUCCESS;
+                }
+                else
+                {
+                    std::wcerr << L"FindNextFile(" << findPattern << L") failed with error " << error << std::endl;
+                }
+
+                if (!::FindClose(findHandle))
+                {
+                    error = ::GetLastError();
+                    std::wcerr << L"FindClose(0x" << std::hex << findHandle << std::dec << L") failed with error " << error << std::endl;
+                }
+
+                findHandle = INVALID_HANDLE_VALUE;
+            }
+        }
+    }
 
 finally:
+
+    if (findHandle != INVALID_HANDLE_VALUE)
+    {
+        if (!::FindClose(findHandle))
+        {
+            error = ::GetLastError();
+            std::wcerr << L"FindClose(0x" << std::hex << findHandle << std::dec << L") failed with error " << error << std::endl;
+        }
+    }
 
     CloseHandleIf(threadTokenHandle);
 

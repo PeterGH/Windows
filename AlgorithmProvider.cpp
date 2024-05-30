@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <bcrypt.h>
 #include <iostream>
+#include <sstream>
 
 #pragma comment(lib, "bcrypt")
 
@@ -157,6 +158,61 @@ HRESULT GetAlgorithmChainingMode(BCRYPT_ALG_HANDLE hAlg)
     return S_OK;
 }
 
+std::wstring ToString(byte* buffer, ULONG length)
+{
+    std::wostringstream oss;
+
+    oss << std::hex;
+
+    for (ULONG i = 0; i < length; i++)
+    {
+        oss << buffer[i++];
+    }
+
+    return oss.str();
+}
+
+HRESULT GetAlgorithmDhParameters(BCRYPT_ALG_HANDLE hAlg)
+{
+    HRESULT hr;
+    std::unique_ptr<byte[]> propertyBuffer;
+    BCRYPT_DH_PARAMETER_HEADER* property;
+    ULONG propertySize = 0;
+
+    hr = GetAlgorithmProperty(hAlg, BCRYPT_DH_PARAMETERS, propertyBuffer, &property, &propertySize);
+
+    if (FAILED(hr))
+    {
+        std::wcerr << L"GetAlgorithmDhParameters failed: hr=" << hr << std::endl;
+        return hr;
+    }
+
+    std::wcout << L"Algorithm DH parameters: [Length|Magic|KeyLength]=[ '" << property->cbLength << L"|0x" << std::hex << property->dwMagic << std::dec << L"|" << property->cbKeyLength << L"]" << std::endl;
+
+    if (property->cbLength != propertySize)
+    {
+        std::wcerr << L"GetAlgorithmDhParameters unexpected buffer size: expected=" << propertySize << L", actual=" << property->cbLength << std::endl;
+    }
+
+    if (property->dwMagic != 0x4d504844)
+    {
+        std::wcerr << L"GetAlgorithmDhParameters unexpected magic number: expected=0x4d504844, actual=0x" << std::hex << property->dwMagic << std::dec << std::endl;
+    }
+
+    ULONG expectedKeyLength = (propertySize - sizeof(BCRYPT_DH_PARAMETER_HEADER)) >> 1;
+
+    if (property->cbKeyLength != expectedKeyLength)
+    {
+        std::wcerr << L"GetAlgorithmDhParameters unexpected key length: expected=" << expectedKeyLength << L", actual=" << property->cbKeyLength << std::endl;
+    }
+
+    PBYTE key = (PBYTE)(property + sizeof(BCRYPT_DH_PARAMETER_HEADER));
+    std::wcout << L"Algorithm DH parameters: Prime=0x" << ToString(key, property->cbKeyLength) << std::endl;
+    key += property->cbKeyLength;
+    std::wcout << L"Algorithm DH parameters: Generator=0x" << ToString(key, property->cbKeyLength) << std::endl;
+
+    return S_OK;
+}
 
 HRESULT InspectAlgorithmProvider(
     LPCWSTR algorithmId,
@@ -189,6 +245,7 @@ HRESULT InspectAlgorithmProvider(
     GetAlgorithmBlockLength(hAlg);
     GetAlgorithmBlockSizeList(hAlg);
     GetAlgorithmChainingMode(hAlg);
+    GetAlgorithmDhParameters(hAlg);
 
     status = BCryptCloseAlgorithmProvider(hAlg, 0 /* dwFlags */);
 

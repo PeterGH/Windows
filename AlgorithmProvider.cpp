@@ -27,7 +27,6 @@ HRESULT GetAlgorithmProperty(
     // BCryptGetProperty returns STATUS_SUCCESS instead of STATUS_BUFFER_TOO_SMALL when pbOutput is null
     if (status != 0)
     {
-        std::wcerr << L"Failed to get property size: status=" << status << std::endl;
         return HRESULT_FROM_NT(status);
     }
 
@@ -43,7 +42,6 @@ HRESULT GetAlgorithmProperty(
 
     if (status != 0)
     {
-        std::wcerr << L"Failed to get property value: status=" << status << std::endl;
         return HRESULT_FROM_NT(status);
     }
 
@@ -71,7 +69,7 @@ HRESULT GetAlgorithmName(BCRYPT_ALG_HANDLE hAlg)
         return hr;
     }
 
-    std::wcout << L"Algorithm name: '" << name << L"'" << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_ALGORITHM_NAME << L" = '" << name << L"'" << std::endl;
     return S_OK;
 }
 
@@ -89,7 +87,7 @@ HRESULT GetAlgorithmAuthTagLength(BCRYPT_ALG_HANDLE hAlg)
         return hr;
     }
 
-    std::wcout << L"Algorithm auth tag length [min|max|inc] = [" << property->dwMinLength << L"|" << property->dwMaxLength << L"|" << property->dwIncrement << L"]" << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_AUTH_TAG_LENGTH << L": [min | max | inc] = [" << property->dwMinLength << L" | " << property->dwMaxLength << L" | " << property->dwIncrement << L"]" << std::endl;
     return S_OK;
 }
 
@@ -107,7 +105,7 @@ HRESULT GetAlgorithmBlockLength(BCRYPT_ALG_HANDLE hAlg)
         return hr;
     }
 
-    std::wcout << L"Algorithm block length  = " << *property << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_BLOCK_LENGTH << L" = " << *property << std::endl;
     return S_OK;
 }
 
@@ -127,7 +125,7 @@ HRESULT GetAlgorithmBlockSizeList(BCRYPT_ALG_HANDLE hAlg)
     }
 
     size_t sizesCount = (size_t)propertySize / sizeof(DWORD);
-    std::wcout << L"Algorithm block sizes  = [";
+    std::wcout << L"Algorithm " << BCRYPT_BLOCK_SIZE_LIST << L" = [";
     for (size_t i = 0; i < sizesCount; i++)
     {
         if (i > 0)
@@ -154,7 +152,7 @@ HRESULT GetAlgorithmChainingMode(BCRYPT_ALG_HANDLE hAlg)
         return hr;
     }
 
-    std::wcout << L"Algorithm chaininng mode: '" << mode << L"'" << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_CHAINING_MODE << L" = '" << mode << L"'" << std::endl;
     return S_OK;
 }
 
@@ -187,7 +185,7 @@ HRESULT GetAlgorithmDhParameters(BCRYPT_ALG_HANDLE hAlg)
         return hr;
     }
 
-    std::wcout << L"Algorithm DH parameters: [Length|Magic|KeyLength]=[ '" << property->cbLength << L"|0x" << std::hex << property->dwMagic << std::dec << L"|" << property->cbKeyLength << L"]" << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_DH_PARAMETERS << L": [Length | Magic | KeyLength] = ['" << property->cbLength << L"|0x" << std::hex << property->dwMagic << std::dec << L"|" << property->cbKeyLength << L"]" << std::endl;
 
     if (property->cbLength != propertySize)
     {
@@ -207,9 +205,96 @@ HRESULT GetAlgorithmDhParameters(BCRYPT_ALG_HANDLE hAlg)
     }
 
     PBYTE key = (PBYTE)(property + sizeof(BCRYPT_DH_PARAMETER_HEADER));
-    std::wcout << L"Algorithm DH parameters: Prime=0x" << ToString(key, property->cbKeyLength) << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_DH_PARAMETERS << L": Prime=0x" << ToString(key, property->cbKeyLength) << std::endl;
     key += property->cbKeyLength;
-    std::wcout << L"Algorithm DH parameters: Generator=0x" << ToString(key, property->cbKeyLength) << std::endl;
+    std::wcout << L"Algorithm " << BCRYPT_DH_PARAMETERS << L": Generator=0x" << ToString(key, property->cbKeyLength) << std::endl;
+
+    return S_OK;
+}
+
+HRESULT GetAlgorithmEffectiveKeyLength(BCRYPT_ALG_HANDLE hAlg)
+{
+    HRESULT hr;
+    std::unique_ptr<byte[]> propertyBuffer;
+    DWORD* property;
+
+    hr = GetAlgorithmProperty(hAlg, BCRYPT_EFFECTIVE_KEY_LENGTH, propertyBuffer, &property);
+
+    if (FAILED(hr))
+    {
+        std::wcerr << L"GetAlgorithmEffectiveKeyLength failed: hr=" << hr << std::endl;
+        return hr;
+    }
+
+    std::wcout << L"Algorithm " << BCRYPT_EFFECTIVE_KEY_LENGTH << L" = " << *property << std::endl;
+    return S_OK;
+}
+
+HRESULT GetAlgorithmHashBlockLength(BCRYPT_ALG_HANDLE hAlg)
+{
+    HRESULT hr;
+    std::unique_ptr<byte[]> propertyBuffer;
+    DWORD* property;
+
+    hr = GetAlgorithmProperty(hAlg, BCRYPT_HASH_BLOCK_LENGTH, propertyBuffer, &property);
+
+    if (FAILED(hr))
+    {
+        std::wcerr << L"GetAlgorithmHashBlockLength failed: hr=" << hr << std::endl;
+        return hr;
+    }
+
+    std::wcout << L"Algorithm " << BCRYPT_HASH_BLOCK_LENGTH << L" = " << *property << std::endl;
+    return S_OK;
+}
+
+HRESULT GetAlgorithmHashLength(BCRYPT_ALG_HANDLE hAlg)
+{
+    HRESULT hr;
+    std::unique_ptr<byte[]> propertyBuffer;
+    DWORD* property;
+
+    hr = GetAlgorithmProperty(hAlg, BCRYPT_HASH_LENGTH, propertyBuffer, &property);
+
+    if (FAILED(hr))
+    {
+        std::wcerr << L"GetAlgorithmHashLength failed: hr=" << hr << std::endl;
+        return hr;
+    }
+
+    std::wcout << L"Algorithm " << BCRYPT_HASH_LENGTH << L" = " << *property << std::endl;
+    return S_OK;
+}
+
+HRESULT GetAlgorithmHashOidList(BCRYPT_ALG_HANDLE hAlg)
+{
+    HRESULT hr;
+    std::unique_ptr<byte[]> propertyBuffer;
+    BCRYPT_OID_LIST* property;
+    ULONG propertySize = 0;
+
+    hr = GetAlgorithmProperty(hAlg, BCRYPT_HASH_OID_LIST, propertyBuffer, &property, &propertySize);
+
+    if (FAILED(hr))
+    {
+        std::wcerr << L"GetAlgorithmHashOidList failed: hr=" << hr << std::endl;
+        return hr;
+    }
+
+    std::wcout << L"Algorithm " << BCRYPT_HASH_OID_LIST << L": Count = " << property->dwOIDCount << std::endl;
+
+    ULONG actualSize = sizeof(property->dwOIDCount) + property->dwOIDCount * sizeof(BCRYPT_OID);
+    for (ULONG i = 0; i < property->dwOIDCount; i++)
+    {
+        BCRYPT_OID* oid = &property->pOIDs[i];
+        actualSize += oid->cbOID;
+        std::wcout << L"Algorithm " << BCRYPT_HASH_OID_LIST << L"[" << i << L"] = " << ToString(oid->pbOID, oid->cbOID) << std::endl;
+    }
+
+    if (actualSize != propertySize)
+    {
+        std::wcerr << L"GetAlgorithmHashOidList unexpected buffer size: expected=" << propertySize << L", actual=" << actualSize << std::endl;
+    }
 
     return S_OK;
 }
@@ -222,6 +307,7 @@ HRESULT InspectAlgorithmProvider(
     NTSTATUS status;
     BCRYPT_ALG_HANDLE hAlg = INVALID_HANDLE_VALUE;
 
+    std::wcout << L"============================================================================" << std::endl;
     std::wcout << L"Algorithm " << algorithmId << L" implementation " << implementation << L" flag " << flag << std::endl;
 
     status = BCryptOpenAlgorithmProvider(&hAlg, algorithmId, implementation, flag);
@@ -238,14 +324,16 @@ HRESULT InspectAlgorithmProvider(
         return HRESULT_FROM_WIN32(ERROR_INVALID_HANDLE);
     }
 
-    std::wcout << L"Opened handle=0x" << std::hex << hAlg << std::dec << std::endl;
-
     GetAlgorithmName(hAlg);
     GetAlgorithmAuthTagLength(hAlg);
     GetAlgorithmBlockLength(hAlg);
     GetAlgorithmBlockSizeList(hAlg);
     GetAlgorithmChainingMode(hAlg);
     GetAlgorithmDhParameters(hAlg);
+    GetAlgorithmEffectiveKeyLength(hAlg);
+    GetAlgorithmHashBlockLength(hAlg);
+    GetAlgorithmHashLength(hAlg);
+    GetAlgorithmHashOidList(hAlg);
 
     status = BCryptCloseAlgorithmProvider(hAlg, 0 /* dwFlags */);
 
@@ -254,8 +342,6 @@ HRESULT InspectAlgorithmProvider(
         std::wcerr << L"BCryptCloseAlgorithmProvider failed: status=" << status << std::endl;
         return HRESULT_FROM_NT(status);
     }
-
-    std::wcout << L"Cloded handle=0x" << std::hex << hAlg << std::dec << std::endl;
 
     hAlg = INVALID_HANDLE_VALUE;
     return S_OK;

@@ -1,7 +1,9 @@
 #include <WinSock2.h>
 #include <Windows.h>
+#include <WS2spi.h>
 #include <WS2tcpip.h>
 #include <iomanip>
+#include <ios>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -671,7 +673,9 @@ std::wstring ToString(const GUID& guid)
 {
 	std::wostringstream oss;
 
-	oss << std::hex << std::setfill(L'0') << std::setw(8) << guid.Data1 << L"-" << std::setw(4) << guid.Data2 << L"-" << std::setw(4) << guid.Data3;
+	oss << std::hex << std::setfill(L'0') << std::setw(8) << std::uppercase << guid.Data1
+		<< L"-" << std::setw(4) << std::uppercase << guid.Data2
+		<< L"-" << std::setw(4) << std::uppercase << guid.Data3;
 	for (int i = 0; i < 8; i++)
 	{
 		if (i == 0 || i == 2)
@@ -679,7 +683,7 @@ std::wstring ToString(const GUID& guid)
 			oss << L"-";
 		}
 
-		oss  << std::setw(2) << guid.Data4[i];
+		oss  << std::setw(2) << std::uppercase << guid.Data4[i];
 	}
 
 	return oss.str();
@@ -741,47 +745,239 @@ DWORD Print(const WSAPROTOCOL_INFOW& info)
 	std::wcout << std::endl;
 
 	std::wcout << L"ProviderId: " << ToString(info.ProviderId) << std::endl;
+	std::wcout << L"CatalogEntryId:" << info.dwCatalogEntryId << std::endl;
+
+	std::wcout << L"ProtocolChain: " << info.ProtocolChain.ChainLen << L"|";
+
+	for (int i = 0; i < info.ProtocolChain.ChainLen; i++)
+	{
+		if (i > 0)
+		{
+			std::wcout << L",";
+		}
+
+		std::wcout << info.ProtocolChain.ChainEntries[i];
+	}
+
+	std::wcout << std::endl;
+
+	std::wcout << L"Version: " << info.iVersion << std::endl;
+
+	std::wcout << L"AddressFamily: " << info.iAddressFamily;
+
+#define ENUM(x) \
+	if (info.iAddressFamily == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(AF_UNSPEC);
+	ENUM(AF_UNIX);
+	ENUM(AF_INET);
+	ENUM(AF_IMPLINK);
+	ENUM(AF_PUP);
+	ENUM(AF_CHAOS);
+	ENUM(AF_NS);
+	ENUM(AF_IPX);
+	ENUM(AF_ISO);
+	ENUM(AF_OSI);
+	ENUM(AF_ECMA);
+	ENUM(AF_DATAKIT);
+	ENUM(AF_CCITT);
+	ENUM(AF_SNA);
+	ENUM(AF_DECnet);
+	ENUM(AF_DLI);
+	ENUM(AF_LAT);
+	ENUM(AF_HYLINK);
+	ENUM(AF_APPLETALK);
+	ENUM(AF_NETBIOS);
+	ENUM(AF_VOICEVIEW);
+	ENUM(AF_FIREFOX);
+	ENUM(AF_UNKNOWN1);
+	ENUM(AF_BAN);
+	ENUM(AF_ATM);
+	ENUM(AF_INET6);
+	ENUM(AF_CLUSTER);
+	ENUM(AF_12844);
+	ENUM(AF_IRDA);
+	ENUM(AF_NETDES);
+	ENUM(AF_TCNPROCESS);
+	ENUM(AF_TCNMESSAGE);
+	ENUM(AF_ICLFXBM);
+	ENUM(AF_BTH);
+	ENUM(AF_LINK);
+	ENUM(AF_HYPERV);
+	ENUM(AF_MAX);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"SockAddr[Max|Min]: [" << info.iMaxSockAddr << L"|" << info.iMinSockAddr << L"]" << std::endl;
+
+	std::wcout << L"SocketType: " << info.iSocketType;
+
+#define ENUM(x) \
+	if (info.iSocketType == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(SOCK_STREAM);
+	ENUM(SOCK_DGRAM);
+	ENUM(SOCK_RAW);
+	ENUM(SOCK_RDM);
+	ENUM(SOCK_SEQPACKET);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"Protocol: " << info.iProtocol;
+
+#define ENUM(x) \
+	if (info.iProtocol == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(IPPROTO_HOPOPTS);
+	ENUM(IPPROTO_ICMP);
+	ENUM(IPPROTO_IGMP);
+	ENUM(IPPROTO_GGP);
+	ENUM(IPPROTO_IPV4);
+	ENUM(IPPROTO_ST);
+	ENUM(IPPROTO_TCP);
+	ENUM(IPPROTO_CBT);
+	ENUM(IPPROTO_EGP);
+	ENUM(IPPROTO_IGP);
+	ENUM(IPPROTO_PUP);
+	ENUM(IPPROTO_UDP);
+	ENUM(IPPROTO_IDP);
+	ENUM(IPPROTO_RDP);
+	ENUM(IPPROTO_IPV6);
+	ENUM(IPPROTO_ROUTING);
+	ENUM(IPPROTO_FRAGMENT);
+	ENUM(IPPROTO_ESP);
+	ENUM(IPPROTO_AH);
+	ENUM(IPPROTO_ICMPV6);
+	ENUM(IPPROTO_NONE);
+	ENUM(IPPROTO_DSTOPTS);
+	ENUM(IPPROTO_ND);
+	ENUM(IPPROTO_ICLFXBM);
+	ENUM(IPPROTO_PIM);
+	ENUM(IPPROTO_PGM);
+	ENUM(IPPROTO_L2TP);
+	ENUM(IPPROTO_SCTP);
+	ENUM(IPPROTO_RAW);
+	ENUM(IPPROTO_MAX);
+	ENUM(IPPROTO_RESERVED_RAW);
+	ENUM(IPPROTO_RESERVED_IPSEC);
+	ENUM(IPPROTO_RESERVED_IPSECOFFLOAD);
+	ENUM(IPPROTO_RESERVED_WNV);
+	ENUM(IPPROTO_RESERVED_MAX);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"ProtocolMaxOffset: " << info.iProtocolMaxOffset << std::endl;
+
+	std::wcout << L"NetworkByteOrder: " << info.iNetworkByteOrder;
+
+#define ENUM(x) \
+	if (info.iNetworkByteOrder == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(BIGENDIAN);
+	ENUM(LITTLEENDIAN);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"SecurityScheme: " << info.iSecurityScheme << std::endl;
+	std::wcout << L"MessageSize: " << info.dwMessageSize << std::endl;
+	std::wcout << L"ProviderReserved: " << info.dwProviderReserved << std::endl;
+	std::wcout << L"ProtocolDescription: " << info.szProtocol << std::endl;
 
 	return ERROR_SUCCESS;
 }
 
-DWORD EnumProtocols()
+/// <summary>
+/// The protocol information can be shown using command:
+/// netsh winsock show catalog
+/// </summary>
+DWORD EnumProtocols(bool includeHidden = false)
 {
 	DWORD error = ERROR_SUCCESS;
-	std::vector<byte> buffer(1024);
+	std::vector<byte> buffer;
 	DWORD bufferLength = static_cast<DWORD>(buffer.size());
 	LPWSAPROTOCOL_INFOW info = (LPWSAPROTOCOL_INFOW)buffer.data();
 	int protocolCount = 0;
 
-	error = WSAEnumProtocolsW(
-		nullptr /* lpiPrototols */,
-		info,
-		&bufferLength);
-	if (error == SOCKET_ERROR)
+	if (includeHidden)
 	{
-		error = WSAGetLastError();
-		if (error == WSAENOBUFS)
+		protocolCount = WSCEnumProtocols(
+			nullptr /* lpiProtocols */,
+			info,
+			&bufferLength,
+			(LPINT)&error);
+		if (protocolCount == SOCKET_ERROR)
 		{
-			buffer.resize(bufferLength);
-			// update pointer since buffer is changed
-			info = (LPWSAPROTOCOL_INFOW)buffer.data();
-			error = WSAEnumProtocolsW(
-				nullptr /* lpiPrototols */,
-				info,
-				&bufferLength);
-			if (error == SOCKET_ERROR)
+			if (error == WSAENOBUFS)
 			{
-				error = WSAGetLastError();
+				buffer.resize(bufferLength);
+				// update pointer since buffer is changed
+				info = (LPWSAPROTOCOL_INFOW)buffer.data();
+				protocolCount = WSCEnumProtocols(
+					nullptr /* lpiProtocols */,
+					info,
+					&bufferLength,
+					(LPINT)&error);
+				if (protocolCount == SOCKET_ERROR)
+				{
+					return error;
+				}
+			}
+			else
+			{
 				return error;
 			}
 		}
-		else
+	}
+	else
+	{
+		protocolCount = WSAEnumProtocolsW(
+			nullptr /* lpiPrototols */,
+			info,
+			&bufferLength);
+		if (protocolCount == SOCKET_ERROR)
 		{
-			return error;
+			error = WSAGetLastError();
+			if (error == WSAENOBUFS)
+			{
+				buffer.resize(bufferLength);
+				// update pointer since buffer is changed
+				info = (LPWSAPROTOCOL_INFOW)buffer.data();
+				protocolCount = WSAEnumProtocolsW(
+					nullptr /* lpiPrototols */,
+					info,
+					&bufferLength);
+				if (protocolCount == SOCKET_ERROR)
+				{
+					error = WSAGetLastError();
+					return error;
+				}
+			}
+			else
+			{
+				return error;
+			}
 		}
 	}
-
-	protocolCount = error;
 
 	std::wcout << L"Found " << protocolCount << L" protocols." << std::endl;
 	for (int i = 0; i < protocolCount; i++)
@@ -798,7 +994,7 @@ void Usage(int argc, wchar_t* argv[])
 	std::wcout << L"Usage:" << std::endl;
 	std::wcout << argv[0] << L" server <ip> <port>" << std::endl;
 	std::wcout << argv[0] << L" client <ip> <port>" << std::endl;
-	std::wcout << argv[0] << L" enumprotocols" << std::endl;
+	std::wcout << argv[0] << L" enumprotocols --include-hidden" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -854,7 +1050,9 @@ int wmain(int argc, wchar_t* argv[])
 	}
 	else if (context == L"enumprotocols")
 	{
-		error = EnumProtocols();
+		bool includeHidden = (arg.HasNext() && (arg.NextAsString() == L"--include-hidden"));
+
+		error = EnumProtocols(includeHidden);
 		if (error != ERROR_SUCCESS)
 		{
 			std::wcerr << L"EnumProtocols failed with error " << error << std::endl;

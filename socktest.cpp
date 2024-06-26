@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <WS2spi.h>
 #include <WS2tcpip.h>
+#include <nsemail.h>
 #include <iomanip>
 #include <ios>
 #include <iostream>
@@ -472,6 +473,19 @@ DWORD Server(Arg& arg)
 		std::wcerr << L"WSAWaitForMultipleEvents failed with error " << error << std::endl;
 	}
 
+	if (wi.overlapped.hEvent != WSA_INVALID_EVENT)
+	{
+		if (!WSACloseEvent(wi.overlapped.hEvent))
+		{
+			error = WSAGetLastError();
+			std::wcerr << L"WSACloseEvent failed with error " << error << std::endl;
+		}
+		else
+		{
+			wi.overlapped.hEvent = WSA_INVALID_EVENT;
+		}
+	}
+
 	std::wcerr << L"Received bytes: " << wi.payload.size() << std::endl;
 
 	if (wi.payload.size() >= sizeofDWORD)
@@ -625,8 +639,6 @@ DWORD Client(Arg& arg)
 		std::wcerr << L"WSAWaitForMultipleEvents failed with error " << error << std::endl;
 	}
 
-	finally:
-
 	if (wi.overlapped.hEvent != WSA_INVALID_EVENT)
 	{
 		if (!WSACloseEvent(wi.overlapped.hEvent))
@@ -639,6 +651,8 @@ DWORD Client(Arg& arg)
 			wi.overlapped.hEvent = WSA_INVALID_EVENT;
 		}
 	}
+
+finally:
 
 	if (socket != INVALID_SOCKET)
 	{
@@ -989,12 +1003,146 @@ DWORD EnumProtocols(bool includeHidden = false)
 	return ERROR_SUCCESS;
 }
 
+DWORD Print(const WSANAMESPACE_INFOEXW& info)
+{
+	std::wcout << L"ProviderId: " << ToString(info.NSProviderId) << std::endl;
+
+	std::wcout << L"NameSpace: " << info.dwNameSpace;
+
+#define ENUM(x) \
+	if (info.dwNameSpace == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(NS_ALL);
+	ENUM(NS_SAP);
+	ENUM(NS_NDS);
+	ENUM(NS_PEER_BROWSE);
+	ENUM(NS_SLP);
+	ENUM(NS_DHCP);
+	ENUM(NS_TCPIP_LOCAL);
+	ENUM(NS_TCPIP_HOSTS);
+	ENUM(NS_DNS);
+	ENUM(NS_NETBT);
+	ENUM(NS_WINS);
+	ENUM(NS_NLA);
+	ENUM(NS_BTH);
+	ENUM(NS_LOCALNAME);
+	ENUM(NS_NBP);
+	ENUM(NS_MS);
+	ENUM(NS_STDA);
+	ENUM(NS_NTDS);
+	ENUM(NS_EMAIL);
+	ENUM(NS_PNRPNAME);
+	ENUM(NS_PNRPCLOUD);
+	ENUM(NS_X500);
+	ENUM(NS_NIS);
+	ENUM(NS_NISPLUS);
+	ENUM(NS_WRQ);
+	ENUM(NS_NETDES);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"Active: " << info.fActive << std::endl;
+	std::wcout << L"Version: " << info.dwVersion << std::endl;
+	std::wcout << L"Identifier: " << info.lpszIdentifier << std::endl;
+
+	std::wcout << L"ProviderSpecific: " << info.ProviderSpecific.cbSize << std::endl;
+
+	if (info.ProviderSpecific.cbSize > 0 && info.ProviderSpecific.pBlobData != nullptr)
+	{
+		NAPI_PROVIDER_INSTALLATION_BLOB* blob = (NAPI_PROVIDER_INSTALLATION_BLOB *)info.ProviderSpecific.pBlobData;
+
+		std::wcout << L"  Version: " << blob->dwVersion << std::endl;
+		std::wcout << L"  ProviderType: " << blob->dwProviderType;
+
+#define ENUM(x) \
+	if (blob->dwProviderType == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+		ENUM(ProviderType_Application);
+		ENUM(ProviderType_Service);
+
+#undef ENUM
+
+		std::wcout << std::endl;
+
+		std::wcout << L"  SupportsWildCard: " << blob->fSupportsWildCard << std::endl;
+
+		std::wcout << L"  Domains: " << blob->cDomains << std::endl;
+	}
+
+	return ERROR_SUCCESS;
+}
+
+/// <summary>
+/// The protocol information can be shown using command:
+/// netsh winsock show catalog
+/// </summary>
+DWORD EnumNameSpaceProviders()
+{
+	DWORD error = ERROR_SUCCESS;
+	std::vector<byte> buffer;
+	DWORD bufferLength = 0;
+	int providerCount = 0;
+	LPWSANAMESPACE_INFOEXW info = nullptr;
+
+	providerCount = WSAEnumNameSpaceProvidersExW(
+		&bufferLength,
+		nullptr);
+
+	if (providerCount != SOCKET_ERROR)
+	{
+		std::wcerr << L"WSAEnumNameSpaceProvidersExW failed unexpectedly" << std::endl;
+		return ERROR_BAD_ARGUMENTS;
+	}
+
+	error = WSAGetLastError();
+
+	if (error != WSAEFAULT)
+	{
+		std::wcerr << L"WSAEnumNameSpaceProvidersExW failed with error " << error << std::endl;
+		return error;
+	}
+
+	buffer.resize(bufferLength);
+
+	providerCount = WSAEnumNameSpaceProvidersExW(
+		&bufferLength,
+		(LPWSANAMESPACE_INFOEXW)buffer.data());
+
+	if (providerCount == SOCKET_ERROR)
+	{
+		error = WSAGetLastError();
+		std::wcerr << L"WSAEnumNameSpaceProvidersExW failed with error " << error << std::endl;
+		return error;
+	}
+
+	std::wcout << L"Found " << providerCount << L" namespace providers" << std::endl;
+
+	info = (LPWSANAMESPACE_INFOEXW)buffer.data();
+
+	for (int i = 0; i < providerCount; i++)
+	{
+		std::wcout << L"==== NameSpace Provider " << i << std::endl;
+		Print(info[i]);
+	}
+
+	return ERROR_SUCCESS;
+}
+
 void Usage(int argc, wchar_t* argv[])
 {
 	std::wcout << L"Usage:" << std::endl;
 	std::wcout << argv[0] << L" server <ip> <port>" << std::endl;
 	std::wcout << argv[0] << L" client <ip> <port>" << std::endl;
 	std::wcout << argv[0] << L" enumprotocols --include-hidden" << std::endl;
+	std::wcout << argv[0] << L" enumnamespaceproviders" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -1056,6 +1204,14 @@ int wmain(int argc, wchar_t* argv[])
 		if (error != ERROR_SUCCESS)
 		{
 			std::wcerr << L"EnumProtocols failed with error " << error << std::endl;
+		}
+	}
+	else if (context == L"enumnamespaceproviders")
+	{
+		error = EnumNameSpaceProviders();
+		if (error != ERROR_SUCCESS)
+		{
+			std::wcerr << L"EnumNameSpaceProviders failed with error " << error << std::endl;
 		}
 	}
 	else

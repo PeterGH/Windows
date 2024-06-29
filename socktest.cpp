@@ -1136,6 +1136,215 @@ DWORD EnumNameSpaceProviders()
 	return ERROR_SUCCESS;
 }
 
+DWORD Print(const ADDRINFOEXW& info)
+{
+	std::wcout << L"Flags: " << info.ai_flags;
+
+#define FLAG(x) \
+	if (info.ai_flags & (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	FLAG(AI_PASSIVE);
+	FLAG(AI_CANONNAME);
+	FLAG(AI_NUMERICHOST);
+	FLAG(AI_NUMERICSERV);
+	FLAG(AI_DNS_ONLY);
+	FLAG(AI_FORCE_CLEAR_TEXT);
+	FLAG(AI_BYPASS_DNS_CACHE);
+	FLAG(AI_RETURN_TTL);
+	FLAG(AI_ALL);
+	FLAG(AI_ADDRCONFIG);
+	FLAG(AI_V4MAPPED);
+	FLAG(AI_NON_AUTHORITATIVE);
+	FLAG(AI_SECURE);
+	FLAG(AI_RETURN_PREFERRED_NAMES);
+	FLAG(AI_FQDN);
+	FLAG(AI_FILESERVER);
+	FLAG(AI_DISABLE_IDN_ENCODING);
+	FLAG(AI_SECURE_WITH_FALLBACK);
+	FLAG(AI_EXCLUSIVE_CUSTOM_SERVERS);
+	FLAG(AI_RETURN_RESPONSE_FLAGS);
+	FLAG(AI_REQUIRE_SECURE);
+	FLAG(AI_RESOLUTION_HANDLE);
+	FLAG(AI_EXTENDED);
+
+#undef FLAG
+
+	std::wcout << std::endl;
+
+	std::wcout << L"Family: " << info.ai_family;
+
+#define ENUM(x) \
+	if (info.ai_family == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(AF_UNSPEC);
+	ENUM(AF_UNIX);
+	ENUM(AF_INET);
+	ENUM(AF_IMPLINK);
+	ENUM(AF_PUP);
+	ENUM(AF_CHAOS);
+	ENUM(AF_NS);
+	ENUM(AF_IPX);
+	ENUM(AF_ISO);
+	ENUM(AF_OSI);
+	ENUM(AF_ECMA);
+	ENUM(AF_DATAKIT);
+	ENUM(AF_CCITT);
+	ENUM(AF_SNA);
+	ENUM(AF_DECnet);
+	ENUM(AF_DLI);
+	ENUM(AF_LAT);
+	ENUM(AF_HYLINK);
+	ENUM(AF_APPLETALK);
+	ENUM(AF_NETBIOS);
+	ENUM(AF_VOICEVIEW);
+	ENUM(AF_FIREFOX);
+	ENUM(AF_UNKNOWN1);
+	ENUM(AF_BAN);
+	ENUM(AF_ATM);
+	ENUM(AF_INET6);
+	ENUM(AF_CLUSTER);
+	ENUM(AF_12844);
+	ENUM(AF_IRDA);
+	ENUM(AF_NETDES);
+	ENUM(AF_TCNPROCESS);
+	ENUM(AF_TCNMESSAGE);
+	ENUM(AF_ICLFXBM);
+	ENUM(AF_BTH);
+	ENUM(AF_LINK);
+	ENUM(AF_HYPERV);
+	ENUM(AF_MAX);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"SockType: " << info.ai_socktype;
+
+#define ENUM(x) \
+	if (info.ai_socktype == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(SOCK_STREAM);
+	ENUM(SOCK_DGRAM);
+	ENUM(SOCK_RAW);
+	ENUM(SOCK_RDM);
+	ENUM(SOCK_SEQPACKET);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"Protocol: " << info.ai_protocol;
+
+#define ENUM(x) \
+	if (info.ai_protocol == (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	ENUM(IPPROTO_HOPOPTS);
+	ENUM(IPPROTO_ICMP);
+	ENUM(IPPROTO_IGMP);
+	ENUM(IPPROTO_GGP);
+	ENUM(IPPROTO_IPV4);
+	ENUM(IPPROTO_ST);
+	ENUM(IPPROTO_TCP);
+	ENUM(IPPROTO_CBT);
+	ENUM(IPPROTO_EGP);
+	ENUM(IPPROTO_IGP);
+	ENUM(IPPROTO_PUP);
+	ENUM(IPPROTO_UDP);
+	ENUM(IPPROTO_IDP);
+	ENUM(IPPROTO_RDP);
+	ENUM(IPPROTO_IPV6);
+	ENUM(IPPROTO_ROUTING);
+	ENUM(IPPROTO_FRAGMENT);
+	ENUM(IPPROTO_ESP);
+	ENUM(IPPROTO_AH);
+	ENUM(IPPROTO_ICMPV6);
+	ENUM(IPPROTO_NONE);
+	ENUM(IPPROTO_DSTOPTS);
+	ENUM(IPPROTO_ND);
+	ENUM(IPPROTO_ICLFXBM);
+	ENUM(IPPROTO_PIM);
+	ENUM(IPPROTO_PGM);
+	ENUM(IPPROTO_L2TP);
+	ENUM(IPPROTO_SCTP);
+	ENUM(IPPROTO_RAW);
+	ENUM(IPPROTO_MAX);
+	ENUM(IPPROTO_RESERVED_RAW);
+	ENUM(IPPROTO_RESERVED_IPSEC);
+	ENUM(IPPROTO_RESERVED_IPSECOFFLOAD);
+	ENUM(IPPROTO_RESERVED_WNV);
+	ENUM(IPPROTO_RESERVED_MAX);
+
+#undef ENUM
+
+	std::wcout << std::endl;
+
+	std::wcout << L"AddressLength: " << info.ai_addrlen << std::endl;
+
+	if (info.ai_canonname != nullptr)
+	{
+		std::wcout << L"CanonicalName: " << info.ai_canonname << std::endl;
+	}
+
+
+	return ERROR_SUCCESS;
+}
+
+DWORD GetAddressInfo(Arg& arg)
+{
+	DWORD error = ERROR_SUCCESS;
+
+	std::wstring host = arg.NextAsString();
+	std::wstring service = arg.NextAsString();
+	ADDRINFOEXW hint{ 0 };
+	PADDRINFOEXW result = nullptr;
+	PADDRINFOEXW info = nullptr;
+
+	error = GetAddrInfoExW(
+		host.c_str(),
+		service.c_str(),
+		NS_ALL,
+		nullptr /* lpNspId */,
+		&hint,
+		&result,
+		nullptr /* timeout */,
+		nullptr /* lpOverlapped */,
+		nullptr /* lpCompletionRoutine */,
+		nullptr /* lpHandle */);
+
+	if (error != NO_ERROR)
+	{
+		std::wcerr << L"GetAddrInfoExW failed with error " << error << L" (" << WSAGetLastError() << L")" << std::endl;
+		return error;
+	}
+
+	int i = 0;
+
+	info = result;
+	while (info != nullptr)
+	{
+		std::wcout << L"==== Address Info " << i << std::endl;
+		Print(*info);
+		info = info->ai_next;
+		i++;
+	}
+
+	FreeAddrInfoExW(result);
+
+	return ERROR_SUCCESS;
+}
+
 void Usage(int argc, wchar_t* argv[])
 {
 	std::wcout << L"Usage:" << std::endl;
@@ -1143,6 +1352,7 @@ void Usage(int argc, wchar_t* argv[])
 	std::wcout << argv[0] << L" client <ip> <port>" << std::endl;
 	std::wcout << argv[0] << L" enumprotocols --include-hidden" << std::endl;
 	std::wcout << argv[0] << L" enumnamespaceproviders" << std::endl;
+	std::wcout << argv[0] << L" getaddrinfo [<host>] [<service>]" << std::endl;
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -1212,6 +1422,14 @@ int wmain(int argc, wchar_t* argv[])
 		if (error != ERROR_SUCCESS)
 		{
 			std::wcerr << L"EnumNameSpaceProviders failed with error " << error << std::endl;
+		}
+	}
+	else if (context == L"getaddrinfo")
+	{
+		error = GetAddressInfo(arg);
+		if (error != ERROR_SUCCESS)
+		{
+			std::wcerr << L"GetAddressInfo failed with error " << error << std::endl;
 		}
 	}
 	else

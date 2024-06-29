@@ -1136,50 +1136,15 @@ DWORD EnumNameSpaceProviders()
 	return ERROR_SUCCESS;
 }
 
-DWORD Print(const ADDRINFOEXW& info)
+std::wstring FamilyToString(int family)
 {
-	std::wcout << L"Flags: " << info.ai_flags;
+	std::wstringstream oss;
 
-#define FLAG(x) \
-	if (info.ai_flags & (x)) \
-	{ \
-		std::wcout << L"|" << L#x; \
-	}
-
-	FLAG(AI_PASSIVE);
-	FLAG(AI_CANONNAME);
-	FLAG(AI_NUMERICHOST);
-	FLAG(AI_NUMERICSERV);
-	FLAG(AI_DNS_ONLY);
-	FLAG(AI_FORCE_CLEAR_TEXT);
-	FLAG(AI_BYPASS_DNS_CACHE);
-	FLAG(AI_RETURN_TTL);
-	FLAG(AI_ALL);
-	FLAG(AI_ADDRCONFIG);
-	FLAG(AI_V4MAPPED);
-	FLAG(AI_NON_AUTHORITATIVE);
-	FLAG(AI_SECURE);
-	FLAG(AI_RETURN_PREFERRED_NAMES);
-	FLAG(AI_FQDN);
-	FLAG(AI_FILESERVER);
-	FLAG(AI_DISABLE_IDN_ENCODING);
-	FLAG(AI_SECURE_WITH_FALLBACK);
-	FLAG(AI_EXCLUSIVE_CUSTOM_SERVERS);
-	FLAG(AI_RETURN_RESPONSE_FLAGS);
-	FLAG(AI_REQUIRE_SECURE);
-	FLAG(AI_RESOLUTION_HANDLE);
-	FLAG(AI_EXTENDED);
-
-#undef FLAG
-
-	std::wcout << std::endl;
-
-	std::wcout << L"Family: " << info.ai_family;
-
+	oss << family;
 #define ENUM(x) \
-	if (info.ai_family == (x)) \
+	if (family == (x)) \
 	{ \
-		std::wcout << L"|" << L#x; \
+		oss << L"|" << L#x; \
 	}
 
 	ENUM(AF_UNSPEC);
@@ -1222,8 +1187,48 @@ DWORD Print(const ADDRINFOEXW& info)
 
 #undef ENUM
 
+	return oss.str();
+}
+
+DWORD Print(const ADDRINFOEXW& info)
+{
+	std::wcout << L"Flags: " << info.ai_flags;
+
+#define FLAG(x) \
+	if (info.ai_flags & (x)) \
+	{ \
+		std::wcout << L"|" << L#x; \
+	}
+
+	FLAG(AI_PASSIVE);
+	FLAG(AI_CANONNAME);
+	FLAG(AI_NUMERICHOST);
+	FLAG(AI_NUMERICSERV);
+	FLAG(AI_DNS_ONLY);
+	FLAG(AI_FORCE_CLEAR_TEXT);
+	FLAG(AI_BYPASS_DNS_CACHE);
+	FLAG(AI_RETURN_TTL);
+	FLAG(AI_ALL);
+	FLAG(AI_ADDRCONFIG);
+	FLAG(AI_V4MAPPED);
+	FLAG(AI_NON_AUTHORITATIVE);
+	FLAG(AI_SECURE);
+	FLAG(AI_RETURN_PREFERRED_NAMES);
+	FLAG(AI_FQDN);
+	FLAG(AI_FILESERVER);
+	FLAG(AI_DISABLE_IDN_ENCODING);
+	FLAG(AI_SECURE_WITH_FALLBACK);
+	FLAG(AI_EXCLUSIVE_CUSTOM_SERVERS);
+	FLAG(AI_RETURN_RESPONSE_FLAGS);
+	FLAG(AI_REQUIRE_SECURE);
+	FLAG(AI_RESOLUTION_HANDLE);
+	FLAG(AI_EXTENDED);
+
+#undef FLAG
+
 	std::wcout << std::endl;
 
+	std::wcout << L"Family: " << FamilyToString(info.ai_family) << std::endl;
 	std::wcout << L"SockType: " << info.ai_socktype;
 
 #define ENUM(x) \
@@ -1297,6 +1302,42 @@ DWORD Print(const ADDRINFOEXW& info)
 		std::wcout << L"CanonicalName: " << info.ai_canonname << std::endl;
 	}
 
+	if (info.ai_addr != nullptr)
+	{
+		std::wcout << L"Address Family: " << FamilyToString(info.ai_addr->sa_family) << std::endl;
+
+		std::wcout << L"Address: ";
+
+		for (int i = 0; i < ARRAYSIZE(info.ai_addr->sa_data); i++)
+		{
+			if (i > 0)
+			{
+				std::wcout << L".";
+			}
+
+			std::wcout << (byte)info.ai_addr->sa_data[i];
+		}
+
+		std::wcout << std::endl;
+	}
+
+	std::wcout << L"BlobLength: " << info.ai_bloblen << std::endl;
+
+	if (info.ai_blob != nullptr)
+	{
+		std::wcout << L"Blob: ";
+		for (int i = 0; i < info.ai_bloblen; i++)
+		{
+			std::wcout << std::hex << ((byte*)info.ai_blob)[i] << std::dec;
+		}
+
+		std::wcout << std::endl;
+	}
+
+	if (info.ai_provider != nullptr)
+	{
+		std::wcout << L"Provider: " << ToString(*info.ai_provider) << std::endl;
+	}
 
 	return ERROR_SUCCESS;
 }
@@ -1340,7 +1381,11 @@ DWORD GetAddressInfo(Arg& arg)
 		i++;
 	}
 
-	FreeAddrInfoExW(result);
+	if (result != nullptr)
+	{
+		FreeAddrInfoExW(result);
+		result = nullptr;
+	}
 
 	return ERROR_SUCCESS;
 }
